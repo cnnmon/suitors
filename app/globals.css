@@ -1,26 +1,54 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Document defaults only. Component layout is Tailwind. */
+@font-face {
+  font-family: Suitors;
+  src: url("/SUPERGLU.TTF") format("truetype");
+  font-display: swap;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+@theme {
+  --color-ink: #0b4b28;
+  --color-paper: #f6e7f1;
+  --color-orange: #e86513;
+  --font-display: Suitors;
+  --animate-sign-pop: sign-pop 0.18s ease-out;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@keyframes sign-pop {
+  from {
+    scale: 0.72;
+  }
+  to {
+    scale: 1;
   }
 }
 
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  height: 100%;
+  margin: 0;
+}
+body {
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  background: #000;
+  color: var(--color-ink);
+}
+button,
+input {
+  font: inherit;
+}
+button {
+  cursor: pointer;
+  text-decoration: underline;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+:focus-visible {
+  outline: 3px solid var(--color-orange);
+  outline-offset: 3px;
 }
