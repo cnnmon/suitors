@@ -91,6 +91,11 @@ export function Conversation({ game }: { game: GameController }) {
           The princess asks: “{state.prompt}”
         </p>
       )}
+      {state.phase === "lobby" && state.privateLobby && state.canConfigure && (
+        <button className="w-fit border-2 border-ink bg-ink px-4 py-2 text-paper" disabled={busy || !connected || !me?.seatId || state.seats.filter(s => s.kind === "human").length < (state.minPlayers ?? 1)} onClick={() => void game.start()}>
+          Start contest →
+        </button>
+      )}
       {creating && <p className="m-0">{description}</p>}
       {state.phase === "evaluating" && (
         <p className="m-0" role="status">
@@ -191,7 +196,7 @@ export function Conversation({ game }: { game: GameController }) {
                 : me?.role === "advisor"
                   ? "You’re watching this contest. You’ll rejoin the next one."
                   : state.phase === "lobby"
-                  ? `Waiting for players: ${state.seats.filter(s => s.kind === "human").length}/${state.minPlayers ?? 1} needed to start. Share the invite link.`
+                  ? state.privateLobby ? (state.canConfigure ? `${state.seats.filter(s => s.kind === "human").length} seated · ${state.minPlayers ?? 1} needed. Start when you’re ready. Keep this lobby open; it closes 25 seconds after you disconnect.` : "Waiting for the admin to start the contest.") : "Enter to begin."
                   : speaker
                     ? `Waiting for ${speaker.name}.`
                     : "Waiting for the rest of the court…"}

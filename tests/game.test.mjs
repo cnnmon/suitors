@@ -27,6 +27,7 @@ const { claimRound, finishRound } = require(join(output, 'round.js'));
 const { execute } = require(join(output, 'commands.js'));
 const { scriptedDialogue, npcText } = require(join(output, 'dialogue.js'));
 const { lineagesFrom } = require(join(output, 'lineage.js'));
+const { courtFailure } = require(join(output, 'failure.js'));
 const preferences = (prompt) => ({ prompt, weights: interpretShortPreferences(prompt), source: 'scripted' });
 function tick(room, now) {
   for (const id of Object.keys(room.members)) heartbeat(room, id, now);
@@ -639,6 +640,12 @@ test('timers off allows untimed answers and manual progression through a whole r
   assert.equal(room.reign, 2);
   assert.equal(room.deadline, null);
   assert.equal(room.phase, 'dialogue');
+});
+
+test('court failures name a missing secret, a mismatch, or stale functions', () => {
+  assert.match(courtFailure(new Error('Configure Convex and SUITORS_SERVER_SECRET before starting the court.')), /missing NEXT_PUBLIC_CONVEX_URL or SUITORS_SERVER_SECRET/);
+  assert.match(courtFailure(new Error('Uncaught ConvexError: Unauthorized')), /does not match/);
+  assert.match(courtFailure(new Error('ArgumentValidationError: Object contains extra field `phase`')), /out of date/);
 });
 
 test('minimum humans gates entry; NPCs do not count', () => {

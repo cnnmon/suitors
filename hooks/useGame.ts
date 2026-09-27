@@ -25,20 +25,24 @@ export function useGame(lobbyId?: string) {
 
   useEffect(() => {
     const controller = new AbortController();
+    let closed = false;
     let timer: ReturnType<typeof setTimeout>;
     async function poll() {
       try {
         const response = await fetch(endpoint, { cache: "no-store", signal: controller.signal });
-        if (!response.ok) throw new Error("The court is reconnecting...");
+        if (!response.ok) {
+          const body = await response.json().catch(() => null) as { error?: string } | null;
+          throw new Error(body?.error || `The court could not be reached (${response.status}).`);
+        }
         const next: RoomView = await response.json();
-        if (!controller.signal.aborted) receive(next);
+        if (!controller.signal.aborted) { receive(next); closed = next.closedAt != null; }
       } catch (error) {
         if (!controller.signal.aborted) {
           setConnected(false);
-          setError(error instanceof Error ? error.message : "The court is reconnecting...");
+          setError(error instanceof Error ? error.message : "The court could not be reached.");
         }
       } finally {
-        if (!controller.signal.aborted) timer = setTimeout(poll, POLL_MS);
+        if (!controller.signal.aborted && !closed) timer = setTimeout(poll, POLL_MS);
       }
     }
     void poll();
@@ -46,7 +50,7 @@ export function useGame(lobbyId?: string) {
     return () => { controller.abort(); clearTimeout(timer); clearInterval(clock); };
   }, [receive, endpoint]);
 
-  const act = useCallback(async (action: "say" | "create" | "next" | "reset" | "enter" | "configure", text = "", settings?: LobbyOptions) => {
+  const act = useCallback(async (action: "start" | "say" | "create" | "next" | "reset" | "enter" | "configure", text = "", settings?: LobbyOptions) => {
     if (sending.current) return false;
     sending.current = true; setBusy(true); setError("");
     try {
@@ -58,7 +62,7 @@ export function useGame(lobbyId?: string) {
       if (!response.ok) throw new Error(result.error || "Try again in a moment.");
       receive(result); return true;
     } catch (error) {
-      setError(error instanceof Error ? error.message : "The court is reconnecting...");
+      setError(error instanceof Error ? error.message : "The court could not be reached.");
       return false;
     } finally { sending.current = false; setBusy(false); }
   }, [receive, endpoint, state?.turnKey, state?.speakerId, state?.phase]);
@@ -72,6 +76,7 @@ export function useGame(lobbyId?: string) {
     next: () => act("next"),
     reset: () => act("reset"),
     enter: () => act("enter"),
+    start: () => act("start"),
     configure: (settings: LobbyOptions) => act("configure", "", settings),
   };
 }

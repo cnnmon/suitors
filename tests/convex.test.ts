@@ -2,9 +2,9 @@
 import { beforeEach, afterEach, expect, test, vi } from "vitest";
 import { convexTest } from "convex-test";
 import schema from "../convex/schema";
-import { api } from "../convex/_generated/api";
+import { api, internal } from "../convex/_generated/api";
 import { createRoom } from "../lib/lobby/engine";
-import { FEEDBACK_MS, REVEAL_MS, TURN_COUNT } from "../lib/lobby/settings";
+import { PRESENCE_MS, FEEDBACK_MS, REVEAL_MS, TURN_COUNT } from "../lib/lobby/settings";
 import type { Command } from "../lib/lobby/commands";
 
 const background = vi.hoisted(() => [] as Array<() => Promise<void>>);
@@ -282,6 +282,7 @@ test("invite lobbies isolate gameplay, settings and history, and retain settings
   expect(second.state.capacity).toBe(15);
   const enter = (id: string) => send({ action: "enter", id, lobbyId: "court-alpha" });
   await enter("host");
+  await send({ action: "start", id: "host", lobbyId: "court-alpha" });
   const guest = await send({ action: "sync", id: "guest", lobbyId: "court-alpha" });
   expect(guest.state.you?.role).toBe("suitor");
   const denied = await send({ action: "configure", id: "guest", lobbyId: "court-alpha", winnerSitsOut: false });
@@ -330,6 +331,8 @@ test("optional player limits and timers persist independently per lobby", async 
   expect(state.phase).toBe("lobby");
   await send({ action: "sync", id: "guest", lobbyId: "optional-court" });
   state = (await send({ action: "enter", id: "guest", lobbyId: "optional-court" })).state;
+  expect(state.phase).toBe("lobby");
+  state = (await send({ action: "start", id: "host", lobbyId: "optional-court" })).state;
   expect(state.phase).toBe("dialogue");
   expect(state.deadline).toBeNull();
   state = (await send({ action: "configure", id: "host", lobbyId: "optional-court", timersEnabled: true })).state;
@@ -341,4 +344,43 @@ test("optional player limits and timers persist independently per lobby", async 
   state = (await send({ action: "configure", id: "host", lobbyId: "optional-court", minPlayers: null, maxPlayers: null })).state;
   expect(state).toMatchObject({ capacity: 15, minPlayers: null, maxPlayers: null });
   expect((await send({ action: "configure", id: "host", lobbyId: "optional-court", minPlayers: 10, maxPlayers: 3 })).error).toBeDefined();
+});
+
+
+test("only the admin starts and resets; minimum counts seated humans", async () => {
+  const lobbyId = "admin-start-test";
+  await send({ action: "sync", id: "host", lobbyId, minPlayers: 2 });
+  await send({ action: "enter", id: "host", lobbyId });
+  expect((await send({ action: "start", id: "host", lobbyId })).error).toBeDefined();
+  await send({ action: "sync", id: "guest", lobbyId });
+  expect((await send({ action: "start", id: "host", lobbyId })).error).toBeDefined();
+  expect((await send({ action: "enter", id: "guest", lobbyId })).state.phase).toBe("lobby");
+  expect((await send({ action: "start", id: "guest", lobbyId })).error?.status).toBe(403);
+  expect((await send({ action: "reset", id: "guest", lobbyId })).error?.status).toBe(403);
+  expect((await send({ action: "start", id: "host", lobbyId })).state.phase).toBe("dialogue");
+});
+
+test("admin refresh survives the grace period, but guests cannot keep an abandoned lobby alive", async () => {
+  const lobbyId = "admin-disconnect";
+  const original = (await send({ action: "sync", id: "host", lobbyId })).state;
+  await send({ action: "enter", id: "host", lobbyId });
+  now += PRESENCE_MS - 1; vi.setSystemTime(now);
+  expect((await send({ action: "sync", id: "host", lobbyId })).state.closedAt).toBeNull();
+  now += PRESENCE_MS + 1; vi.setSystemTime(now);
+  const closed = (await send({ action: "sync", id: "guest", lobbyId })).state;
+  expect(closed.closedAt).toBe(now);
+  expect(closed.id).toBe(original.id);
+  expect((await send({ action: "sync", id: "host", lobbyId })).state.closedAt).toBe(now);
+  expect((await send({ action: "reset", id: "host", lobbyId })).state.closedAt).toBe(now);
+  expect((await sync()).closedAt).toBeNull();
+});
+
+test("scheduled expiry closes the lobby without a browser request", async () => {
+  const lobbyId = "scheduled-expiry";
+  await send({ action: "sync", id: "host", lobbyId });
+  now += PRESENCE_MS + 1; vi.setSystemTime(now);
+  await db.mutation(internal.court.expireLobby, { lobbyId });
+  const saved = await db.run(ctx => ctx.db.query("lobbies").withIndex("by_key", q => q.eq("key", lobbyId)).unique());
+  expect(saved?.room.closedAt).toBe(now);
+  expect((await send({ action: "sync", id: "host", lobbyId })).state.closedAt).toBe(now);
 });

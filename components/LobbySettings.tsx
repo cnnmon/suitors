@@ -12,10 +12,7 @@ export function LobbySettings({
 }: {
   onClose: () => void;
   initial?: LobbyOptions;
-  onSave?: (settings: {
-    capacity: number;
-    winnerSitsOut: boolean;
-  }) => Promise<boolean>;
+  onSave?: (settings: LobbyOptions) => Promise<boolean>;
   started?: boolean;
 }) {
   const [minPlayers, setMinPlayers] = useState<number | null>(initial?.minPlayers ?? null);
@@ -69,7 +66,7 @@ export function LobbySettings({
         {!onSave && (
           <p className="m-0">
             Create a separate game and invite friends with its link. Empty seats
-            are played by NPCs.
+            are played by NPCs. You are the admin: start when ready, and keep this tab open. The lobby closes if you disconnect for 25 seconds.
           </p>
         )}
         <fieldset className="grid grid-cols-2 gap-3 border-0 p-0">

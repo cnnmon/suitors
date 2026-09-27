@@ -75,6 +75,7 @@ export function heartbeat(room: Room, id: string | null, now: number) {
 export function resetCourt(room: Room, id: string, now: number) {
   const me = room.members[id];
   if (!me || now - me.lastSeen > PRESENCE_MS) throw new LobbyError("Join the court first.", 401);
+  if (room.ownerId && room.ownerId !== id) throw new LobbyError("Only the admin can reset this lobby.", 403);
   const kept = { name: me.name, joinedAt: me.joinedAt };
   Object.assign(room, { ...createRoom(room.capacity, room.winnerSitsOut, room.ownerId), minPlayers: room.minPlayers ?? null, maxPlayers: room.maxPlayers ?? null, timersEnabled: room.timersEnabled !== false });
   room.members[id] = { name: kept.name, lastSeen: now, joinedAt: kept.joinedAt, seatId: null, entered: true, misses: 0 };
@@ -93,7 +94,24 @@ export function enterCourt(room: Room, id: string, now: number) {
   }
   if (room.phase !== "lobby") return;
   if (!room.seats.some(seat => seat.owner === id)) throw new LobbyError("The court is full.", 403);
-  if (seatedHumans(room, now) >= (room.minPlayers ?? 1)) beginTurn(room, now);
+  if (!room.ownerId && seatedHumans(room, now) >= (room.minPlayers ?? 1)) beginTurn(room, now);
+}
+export function startCourt(room: Room, id: string, now: number) {
+  if (room.ownerId !== id) throw new LobbyError("Only the admin can start this lobby.", 403);
+  if (room.phase !== "lobby") return;
+  if (!room.members[id]?.seatId) throw new LobbyError("Take your seat first.");
+  if (seatedHumans(room, now) < (room.minPlayers ?? 1)) throw new LobbyError("Waiting for the minimum number of players.");
+  beginTurn(room, now);
+}
+export function closeIfAdminAbsent(room: Room, now: number) {
+  if (room.closedAt != null) return true;
+  if (!room.ownerId) return false;
+  const admin = room.members[room.ownerId];
+  if (admin && now - admin.lastSeen <= PRESENCE_MS) return false;
+  room.closedAt = now;
+  room.deadline = null;
+  room.revision++;
+  return true;
 }
 export function leave(room: Room, id: string, now: number) {
   const seat = room.seats.find(s => s.owner === id);
@@ -316,6 +334,7 @@ export function view(room: Room, id: string | null, now: number): RoomView {
   const waiting = ["dialogue", "evaluating"].includes(room.phase);
   const dialogue = own && own.by === id ? { text: own.text, reply: waiting ? "" : own.reply, feedback: waiting ? "" : own.feedback, pending: own.pending, mode: own.mode, timedOut: own.timedOut } : null;
   return {
+    closedAt: room.closedAt ?? null, privateLobby: !!room.ownerId,
     minPlayers: room.minPlayers ?? null, maxPlayers: room.maxPlayers ?? null, timersEnabled: room.timersEnabled !== false,
     capacity: room.capacity ?? 5, winnerSitsOut: !!room.winnerSitsOut, canConfigure: !!id && room.ownerId === id,
     id: room.id, revision: room.revision, reign: room.reign, turn: room.turn, phase: room.phase, deadline: ["dialogue", "feedback"].includes(room.phase) ? room.deadline : null, serverNow: now, turnKey: turnKey(room),

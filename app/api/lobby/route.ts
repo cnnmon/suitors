@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { after, NextRequest, NextResponse } from "next/server";
 import { evaluateRound, interpret } from "@/lib/lobby/ai";
 import { LobbyError } from "@/lib/lobby/engine";
+import { courtFailure } from "@/lib/lobby/failure";
 import { dispatch } from "@/lib/lobby/store";
 import type { Command, CommandResult } from "@/lib/lobby/commands";
 
@@ -41,7 +42,7 @@ function requestedLobby(request: NextRequest) {
 function errorResponse(error: unknown) {
   if (error instanceof LobbyError) return json({ error: error.message }, error.status);
   console.error("Lobby request failed", error);
-  return json({ error: "The court is reconnecting..." }, 503);
+  return json({ error: courtFailure(error) }, 503);
 }
 export async function GET(request: NextRequest) {
   try {
@@ -61,7 +62,7 @@ export async function POST(request: NextRequest) {
     if (raw.length > 2000) throw new LobbyError("That message is too long.", 413);
     let body: { action?: unknown; text?: unknown; turnKey?: unknown; speakerId?: unknown; capacity?: unknown; winnerSitsOut?: unknown; minPlayers?: unknown; maxPlayers?: unknown; timersEnabled?: unknown; phase?: unknown };
     try { body = JSON.parse(raw); } catch { throw new LobbyError("Invalid request."); }
-    if (!body || typeof body !== "object" || !["newLobby", "configure", "say", "next", "reset", "enter", "create"].includes(String(body.action))) throw new LobbyError("Unknown action.");
+    if (!body || typeof body !== "object" || !["start", "newLobby", "configure", "say", "next", "reset", "enter", "create"].includes(String(body.action))) throw new LobbyError("Unknown action.");
     if (body.text !== undefined && typeof body.text !== "string") throw new LobbyError("Invalid answer.");
     if (body.turnKey !== undefined && typeof body.turnKey !== "string") throw new LobbyError("Invalid turn.");
     if (body.speakerId !== undefined && typeof body.speakerId !== "string") throw new LobbyError("Invalid result.");

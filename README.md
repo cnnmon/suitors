@@ -256,3 +256,9 @@ Tests cover the engine, Convex transactions, and the real Next.js endpoint, incl
 
 Convex tests run against an isolated in-memory backend and do not modify the live court.
 
+
+## Invite lobbies
+
+Create a private court to get a separate `/l/<id>` invite URL. Its creator is the admin and chooses when to start. Optional minimum players counts seated humans; the optional maximum caps seats (up to 15). Empty seats use NPCs. Settings also control timers and whether the winner watches the next contest. Player limits can change before starting; timers and succession settings can change during play.
+
+The admin must keep the lobby open. After 25 seconds without an admin heartbeat, Convex permanently closes that lobby; a brief refresh is safe, and guests cannot keep it alive or reopen its link. Archived rounds remain stored. Each browser has its own player cookie. Invite links use the current site origin, so localhost links only work on your own computer.

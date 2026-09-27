@@ -140,11 +140,13 @@ function HowToPlay({
   required = false,
   onCreateLobby,
   winnerSitsOut = false,
+  privateLobby = false,
 }: {
   onClose: () => void;
   required?: boolean;
   onCreateLobby?: () => void;
   winnerSitsOut?: boolean;
+  privateLobby?: boolean;
 }) {
   useEffect(() => {
     if (required) return;
@@ -183,7 +185,7 @@ function HowToPlay({
             autoFocus
             onClick={onClose}
           >
-            Enter the public court
+            {privateLobby ? "Take your seat" : "Enter the public court"}
           </button>
           {onCreateLobby && (
             <button className="text-sm" onClick={onCreateLobby}>
@@ -225,10 +227,18 @@ export function Game({ lobbyId }: { lobbyId?: string }) {
         role="status"
       >
         {game.error || "Taking your place at court…"}
-        {intro && <HowToPlay onClose={closeIntro} />}
+        {intro && <HowToPlay privateLobby={!!lobbyId} onClose={closeIntro} />}
       </main>
     );
   }
+
+  if (state.closedAt != null) return (
+    <main className={twMerge(frame, "grid place-content-center gap-4 bg-paper p-8 text-center")}>
+      <h1 className="font-display text-2xl">This lobby has closed</h1>
+      <p>The admin disconnected. This invite link is no longer active.</p>
+      <a href="/">Return to the public court →</a>
+    </main>
+  );
 
   return (
     <main
@@ -246,7 +256,7 @@ export function Game({ lobbyId }: { lobbyId?: string }) {
         <div className="grid shrink-0 justify-items-end gap-1 whitespace-nowrap">
           {lobbyId && (
             <span className="bg-paper px-1 text-xs">
-              Invite lobby ·{" "}
+              {state.canConfigure ? "Your lobby · Admin" : "Invite lobby"} ·{" "}
               {state.seats.filter((s) => s.kind === "human").length}/
               {state.capacity} players
             </span>
@@ -363,6 +373,7 @@ export function Game({ lobbyId }: { lobbyId?: string }) {
       </footer>
       {((state.phase === "lobby" && !state.you?.seatId) || intro) && (
         <HowToPlay
+          privateLobby={!!lobbyId}
           required={state.phase === "lobby"}
           winnerSitsOut={state.winnerSitsOut}
           onCreateLobby={() => setSettingsMode("create")}
@@ -382,7 +393,12 @@ export function Game({ lobbyId }: { lobbyId?: string }) {
           onClose={() => setSettingsMode(null)}
           initial={
             settingsMode === "edit"
-              ? { capacity: state.capacity, winnerSitsOut: state.winnerSitsOut }
+              ? {
+                  minPlayers: state.minPlayers,
+                  maxPlayers: state.maxPlayers,
+                  timersEnabled: state.timersEnabled,
+                  winnerSitsOut: state.winnerSitsOut,
+                }
               : undefined
           }
           onSave={settingsMode === "edit" ? game.configure : undefined}

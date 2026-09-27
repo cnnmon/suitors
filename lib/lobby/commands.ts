@@ -1,11 +1,11 @@
-import { continueUntimed, setTimers, advance, ensureJoined, enterCourt, heartbeat, LobbyError, nextPrincess, nextSpeaker, resetCourt, submit, turnKey, view } from "./engine";
+import { startCourt, closeIfAdminAbsent, continueUntimed, setTimers, advance, ensureJoined, enterCourt, heartbeat, LobbyError, nextPrincess, nextSpeaker, resetCourt, submit, turnKey, view } from "./engine";
 import { claimRound, finishRound, type Evaluation, type RoundJob } from "./round";
 import { preferenceEdits } from "./preferenceEdits";
 import { PREFERENCE_LIMIT, PREFERENCE_EDIT_LIMIT } from "./settings";
 import type { Preferences, Room, RoomView } from "./types";
 
 export type Command = {
-  action: "configure" | "sync" | "say" | "next" | "reset" | "enter" | "create" | "finishRound" | "finishCreation";
+  action: "start" | "configure" | "sync" | "say" | "next" | "reset" | "enter" | "create" | "finishRound" | "finishCreation";
   phase?: string; minPlayers?: number | null; maxPlayers?: number | null; timersEnabled?: boolean;
   lobbyId?: string; capacity?: number; winnerSitsOut?: boolean;
   id: string; key?: string; text?: string; live?: boolean; speakerId?: string;
@@ -24,15 +24,16 @@ export function execute(room: Room, command: Command, now: number): CommandResul
   const live = !!command.live;
   let result: Omit<CommandResult, "state"> = {};
   try {
+    if (room.closedAt != null || (Object.keys(room.members).length > 0 && closeIfAdminAbsent(room, now))) return { state: view(room, id, now) };
     if (action === "sync") ensureJoined(room, id, now);
-    else heartbeat(room, id, now);
+    else if (action !== "finishRound" && action !== "finishCreation") heartbeat(room, id, now);
     advance(room, now);
     // A crashed web request cannot leave a suitor waiting forever for AI.
     if (room.phase === "evaluating" && room.deadline !== null && now >= room.deadline && room.evaluation) {
       console.warn("Court evaluation exceeded its deadline; using local fallback");
       finishRound(room, room.evaluation.key, room.evaluation.owner, undefined, now);
     }
-    if (!room.members[id]) throw new LobbyError("The court is reconnecting...", 401);
+    if (!room.members[id]) throw new LobbyError("This browser is no longer at court. Refresh to rejoin.", 401);
     if (action === "configure") {
       if (room.ownerId !== id) throw new LobbyError("Only the lobby creator can change these settings.", 403);
       const capacity = command.maxPlayers !== undefined ? command.maxPlayers ?? 15 : command.capacity ?? room.capacity ?? 5;
@@ -47,6 +48,7 @@ export function execute(room: Room, command: Command, now: number): CommandResul
       if (command.winnerSitsOut !== undefined) room.winnerSitsOut = command.winnerSitsOut;
       room.revision++;
     }
+    if (action === "start") startCourt(room, id, now);
     if (action === "reset") resetCourt(room, id, now);
     if (action === "enter") enterCourt(room, id, now);
     // Ignore duplicate or stale clicks from another tab viewing the same result.

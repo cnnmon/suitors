@@ -11,6 +11,7 @@ export type Seat = { id: string; npcName: string; name: string; owner: string | 
 export type Member = { name: string; lastSeen: number; joinedAt: number; seatId: string | null; misses?: number; entered?: boolean };
 export type Winner = { seatId: string; name: string; memberId: string | null; total: number };
 export type Room = {
+  closedAt?: number | null; adminWatchStarted?: boolean;
   minPlayers?: number | null; maxPlayers?: number | null; timersEnabled?: boolean;
   capacity?: number; winnerSitsOut?: boolean; ownerId?: string | null; advisorId?: string | null;
   version: 1; id: string; revision: number; reign: number; turn: number; phase: LobbyPhase; speaker: number;
@@ -23,6 +24,7 @@ export type Room = {
   evaluation?: { owner: string; key: string } | null;
 };
 export type RoomView = {
+  closedAt: number | null; privateLobby: boolean;
   minPlayers: number | null; maxPlayers: number | null; timersEnabled: boolean;
   capacity: number; winnerSitsOut: boolean; canConfigure: boolean;
   id: string; revision: number; reign: number; turn: number; phase: LobbyPhase;

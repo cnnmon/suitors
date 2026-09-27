@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { courtFailure } from "@/lib/lobby/failure";
 import { lineages } from "@/lib/lobby/store";
 
 export const runtime = "nodejs";
@@ -9,6 +10,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(await lineages(request.nextUrl.searchParams.get("lobby") || undefined), { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Lineage request failed", error);
-    return NextResponse.json({ error: "The court is reconnecting..." }, { status: 503 });
+    return NextResponse.json({ error: courtFailure(error) }, { status: 503 });
   }
 }

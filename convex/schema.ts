@@ -11,6 +11,7 @@ const winner = v.union(v.object({ seatId: v.string(), name: v.string(), memberId
 const seat = v.object({ id: v.string(), npcName: v.string(), name: v.string(), owner: nullableString, total: v.number() });
 const submission = v.object({ text: v.string(), reply: v.string(), feedback: v.string(), score: v.number(), features, by: nullableString, mode: v.union(v.literal("live"), v.literal("scripted")), pending: v.boolean(), timedOut: v.boolean(), at: v.number() });
 export const room = v.object({
+  closedAt: v.optional(nullableNumber), adminWatchStarted: v.optional(v.boolean()),
   minPlayers: v.optional(nullableNumber), maxPlayers: v.optional(nullableNumber), timersEnabled: v.optional(v.boolean()),
   capacity: v.optional(v.number()), winnerSitsOut: v.optional(v.boolean()), ownerId: v.optional(nullableString), advisorId: v.optional(nullableString),
   version: v.literal(1), id: v.string(), revision: v.number(), reign: v.number(), turn: v.number(), phase, speaker: v.number(),
