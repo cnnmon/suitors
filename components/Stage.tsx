@@ -54,6 +54,7 @@ export function Stage({ state, now }: { state: RoomView; now: number }) {
       Number(b.id === state.you?.seatId) - Number(a.id === state.you?.seatId),
   );
   const last = seats.length - 1;
+  const dense = seats.length > 5;
 
   if (picked) {
     return (
@@ -87,10 +88,12 @@ export function Stage({ state, now }: { state: RoomView; now: number }) {
         <motion.div
           className="grid h-full w-full min-w-0 items-end justify-self-center"
           style={{
-            gridTemplateColumns: `repeat(${state.seats.length}, minmax(0, 1fr))`,
+            gridTemplateColumns: `repeat(${Math.min(5, state.seats.length)}, minmax(0, 1fr))`,
+            height: dense ? "auto" : undefined,
+            rowGap: dense ? 12 : undefined,
           }}
           initial={false}
-          animate={{ maxWidth: spread ? "100%" : "62%" }}
+          animate={{ maxWidth: spread || dense ? "100%" : "62%" }}
           transition={spring}
         >
           {seats.map((seat, index) => {
@@ -131,7 +134,7 @@ export function Stage({ state, now }: { state: RoomView; now: number }) {
                     />
                   </div>
                   <div
-                    className="relative h-50 flex w-50"
+                    className={dense ? "relative flex h-20 w-20" : "relative h-50 flex w-50"}
                     style={{
                       zIndex: index + 1,
                     }}
@@ -140,6 +143,7 @@ export function Stage({ state, now }: { state: RoomView; now: number }) {
                       className={twMerge(
                         "absolute bottom-0 block h-50 w-auto max-w-none select-none",
                         pixel,
+                        dense && "h-20",
                         index === 0
                           ? "left-0"
                           : index === last
@@ -156,6 +160,7 @@ export function Stage({ state, now }: { state: RoomView; now: number }) {
                 <div
                   className={twMerge(
                     "relative z-[1] rounded-lg mt-1 max-w-40 min-w-0 truncate border border-ink bg-paper px-1 py-0.5 text-center",
+                    dense && "w-full text-[10px]",
                     yours && "bg-ink text-paper",
                     up && "border-orange",
                   )}

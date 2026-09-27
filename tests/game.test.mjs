@@ -556,3 +556,56 @@ test('an existing advisor rejoins once with a new name and no duplicate seat', (
   assert.equal(room.members['person-0'].name, name);
   assert.equal(room.seats.filter(s => s.owner === 'person-0').length, 1);
 });
+
+test('bots receive only the previously revealed preference, retained across rounds and cleared on reset', () => {
+  const room = start();
+  assert.equal(room.lastRevealedPreference, null);
+  const original = room.preferences.prompt;
+  finishReign(room); tick(room, room.deadline);
+  const changed = original.replace('Likes humor', 'Hates humor');
+  nextPrincess(room, preferences(changed), room.deadline - 1);
+  assert.equal(room.lastRevealedPreference, original);
+  for (let turn = 0; turn < 2; turn++) {
+    submit(room, 'person-0', turnKey(room), 'A moon.', room.turnStartedAt + 1);
+    const job = claimRound(room, 'person-0', room.turnStartedAt + 2, true);
+    assert.equal(job.lastRevealedPreference, original);
+    assert.equal(job.preferences.prompt, changed);
+    finishRound(room, job.key, 'person-0', undefined, room.turnStartedAt + 3);
+    pass(room); tick(room, room.deadline);
+  }
+  resetCourt(room, 'person-0', room.turnStartedAt + 1);
+  assert.equal(room.lastRevealedPreference, null);
+});
+
+for (const capacity of [2, 15]) test(`invite court fits ${capacity} human players and completes a reign`, () => {
+  const room = createRoom(capacity);
+  for (let i = 0; i < capacity; i++) { enter(room, `person-${i}`, `Player ${i}`, 0); enterCourt(room, `person-${i}`, 1); }
+  assert.equal(room.seats.length, capacity);
+  assert.equal(room.seats.filter(s => s.owner).length, capacity);
+  enter(room, 'overflow', 'Overflow', 2); enterCourt(room, 'overflow', 2);
+  assert.equal(view(room, 'overflow', 2).you.role, 'spectator');
+  finishReign(room);
+  assert.equal(room.history.length, TURN_COUNT);
+});
+
+test('sit-out setting applies at succession and lasts exactly one contest', () => {
+  const room = start(2); room.ownerId = 'person-0'; room.winnerSitsOut = true;
+  room.preferences = preferences('Likes confidence.');
+  finishReign(room); tick(room, room.deadline);
+  const originalName = room.members['person-0'].name;
+  heartbeat(room, 'person-1', room.deadline - 1);
+  nextPrincess(room, preferences('Likes confidence.'), room.deadline - 1);
+  assert.equal(view(room, 'person-0', room.turnStartedAt).you.role, 'advisor');
+  ensureJoined(room, 'person-0', room.turnStartedAt + 1);
+  assert.equal(room.members['person-0'].name, originalName);
+  assert.equal(room.members['person-0'].seatId, null);
+  const changed = execute(room, { action: 'configure', id: 'person-0', winnerSitsOut: false }, room.turnStartedAt + 2);
+  assert.equal(changed.error, undefined);
+  assert.equal(changed.state.you.role, 'advisor');
+  room.phase = 'creating';
+  room.winner = { seatId: room.seats[1].id, memberId: 'person-1', name: room.members['person-1'].name, total: 100 };
+  nextPrincess(room, preferences('Likes confidence.'), room.turnStartedAt + 3);
+  assert.equal(view(room, 'person-0', room.turnStartedAt).you.role, 'suitor');
+  assert.notEqual(room.members['person-0'].name, originalName);
+  assert.equal(view(room, 'person-1', room.turnStartedAt).you.role, 'suitor');
+});

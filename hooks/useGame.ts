@@ -5,7 +5,8 @@ import { POLL_MS } from "@/lib/lobby/settings";
 import type { RoomView } from "@/lib/lobby/types";
 
 // The only browser game-state hook. The server owns phases, seats, and deadlines.
-export function useGame() {
+export function useGame(lobbyId?: string) {
+  const endpoint = `/api/lobby${lobbyId ? `?lobby=${encodeURIComponent(lobbyId)}` : ""}`;
   const [state, setState] = useState<RoomView | null>(null);
   const [error, setError] = useState("");
   const [connected, setConnected] = useState(false);
@@ -26,7 +27,7 @@ export function useGame() {
     let timer: ReturnType<typeof setTimeout>;
     async function poll() {
       try {
-        const response = await fetch("/api/lobby", { cache: "no-store", signal: controller.signal });
+        const response = await fetch(endpoint, { cache: "no-store", signal: controller.signal });
         if (!response.ok) throw new Error("The court is reconnecting...");
         const next: RoomView = await response.json();
         if (!controller.signal.aborted) receive(next);
@@ -42,15 +43,15 @@ export function useGame() {
     void poll();
     const clock = setInterval(() => setNow(Date.now()), 250);
     return () => { controller.abort(); clearTimeout(timer); clearInterval(clock); };
-  }, [receive]);
+  }, [receive, endpoint]);
 
-  const act = useCallback(async (action: "say" | "create" | "next" | "reset" | "enter", text = "") => {
+  const act = useCallback(async (action: "say" | "create" | "next" | "reset" | "enter" | "configure", text = "", settings?: { capacity: number; winnerSitsOut: boolean }) => {
     if (sending.current) return false;
     sending.current = true; setBusy(true); setError("");
     try {
-      const response = await fetch("/api/lobby", {
+      const response = await fetch(endpoint, {
         method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(12_000),
-        body: JSON.stringify({ action, text, turnKey: state?.turnKey, ...(action === "next" ? { speakerId: state?.speakerId } : {}) }),
+        body: JSON.stringify({ action, text, ...settings, turnKey: state?.turnKey, ...(action === "next" ? { speakerId: state?.speakerId } : {}) }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Try again in a moment.");
@@ -59,7 +60,7 @@ export function useGame() {
       setError(error instanceof Error ? error.message : "The court is reconnecting...");
       return false;
     } finally { sending.current = false; setBusy(false); }
-  }, [receive, state?.turnKey, state?.speakerId]);
+  }, [receive, endpoint, state?.turnKey, state?.speakerId]);
 
   const clock = state ? (now ? now + clockOffset.current : state.serverNow) : 0;
   const remaining = state?.deadline ? Math.max(0, Math.ceil((state.deadline - clock) / 1000)) : null;
@@ -70,6 +71,7 @@ export function useGame() {
     next: () => act("next"),
     reset: () => act("reset"),
     enter: () => act("enter"),
+    configure: (settings: { capacity: number; winnerSitsOut: boolean }) => act("configure", "", settings),
   };
 }
 export type GameController = ReturnType<typeof useGame>;

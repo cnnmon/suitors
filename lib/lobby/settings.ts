@@ -1,8 +1,9 @@
 // Change these to tune the game. Times are milliseconds.
 export const PLAYER_NOUNS = ["Moth", "Teapot", "Pebble", "Moss", "Button", "Comet", "Toast", "Fern", "Spoon", "Cloud", "Acorn", "Puddle", "Velvet", "Cricket", "Marble", "Lantern"];
-export const NPC_NAMES = ["Pip", "Dot", "Bop", "Nib", "Kit"];
+export const NPC_NAMES = ["Pip", "Dot", "Bop", "Nib", "Kit", "Wisp", "Fig", "Bramble", "Tink", "Puck", "Rune", "Dew", "Sprig", "Bun", "Poppy"];
 // One human stands with three NPCs (four suitors). Two or more humans keep at most two NPCs.
-export const courtSize = (humans: number) => humans <= 1 ? 4 : Math.min(NPC_NAMES.length, humans + 2);
+export const MAX_PLAYERS = 15;
+export const courtSize = (humans: number, capacity = 5) => Math.min(capacity, humans <= 1 ? 4 : humans + 2);
 export const TURN_COUNT = 3;
 export const TURN_MS = 30_000;
 export const FEEDBACK_MS = 8_000;

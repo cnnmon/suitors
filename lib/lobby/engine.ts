@@ -10,11 +10,12 @@ import { scriptedDialogue } from "./dialogue";
 import { CREATE_MS, FEEDBACK_MS, MESSAGE_LIMIT, PRESENCE_MS, REVEAL_MS, TURN_COUNT, TURN_MS, NPC_CREATE_MS, NPC_NAMES, NPC_PREFERENCES, PLAYER_NOUNS, NAME_LIMIT, courtSize } from "./settings";
 import type { Room, RoomView } from "./types";
 
-export function createRoom(): Room {
+export function createRoom(capacity = 5, winnerSitsOut = false, ownerId: string | null = null): Room {
   return {
+    capacity, winnerSitsOut, ownerId, advisorId: null,
     version: 1, id: randomUUID(), revision: 0, reign: 1, turn: 0, phase: "lobby", speaker: 0, deadline: null, turnStartedAt: 0,
-    seats: NPC_NAMES.slice(0, courtSize(0)).map((npcName, i) => ({ id: `seat-${i}`, npcName, name: npcName, owner: null, total: 0 })),
-    members: {}, preferences: starterPreferences(), creator: { name: "The founding council", memberId: null }, winner: null,
+    seats: NPC_NAMES.slice(0, courtSize(0, capacity)).map((npcName, i) => ({ id: `seat-${i}`, npcName, name: npcName, owner: null, total: 0 })),
+    members: {}, preferences: starterPreferences(), lastRevealedPreference: null, creator: { name: "The founding council", memberId: null }, winner: null,
     submissions: {}, history: [], evaluation: null, creationPending: false, creationId: null, pausedAt: null
   };
 }
@@ -24,8 +25,8 @@ export class LobbyError extends Error {
 }
 const touch = (room: Room) => { room.revision++; };
 function fitCourt(room: Room, now: number) {
-  const humans = Object.entries(room.members).filter(([id, member]) => id !== room.creator.memberId && member.entered !== false && now - member.lastSeen <= PRESENCE_MS).length;
-  const size = courtSize(humans);
+  const humans = Object.entries(room.members).filter(([id, member]) => id !== room.advisorId && member.entered !== false && now - member.lastSeen <= PRESENCE_MS).length;
+  const size = courtSize(humans, room.capacity ?? 5);
   while (room.seats.length < size && room.seats.length < NPC_NAMES.length) {
     const index = room.seats.length;
     room.seats.push({ id: `seat-${index}`, npcName: NPC_NAMES[index], name: NPC_NAMES[index], owner: null, total: 0 });
@@ -44,7 +45,7 @@ function assignSeats(room: Room, now: number) {
   // Keep the evaluation roster fixed, but allow humans to inherit existing NPC seats.
   if (["lobby", "dialogue"].includes(room.phase)) fitCourt(room, now);
   for (const [id, member] of Object.entries(room.members).sort((a, b) => a[1].joinedAt - b[1].joinedAt)) {
-    if (member.entered === false || member.seatId || (member.misses ?? 0) >= 2 || now - member.lastSeen > PRESENCE_MS) continue;
+    if (id === room.advisorId || member.entered === false || member.seatId || (member.misses ?? 0) >= 2 || now - member.lastSeen > PRESENCE_MS) continue;
     const seat = room.seats.find(s => !s.owner && !(room.winner?.seatId === s.id && ["reveal", "creating"].includes(room.phase)));
     if (!seat) continue;
     seat.owner = id; seat.name = member.name; member.seatId = seat.id; member.entered = true;
@@ -74,7 +75,7 @@ export function resetCourt(room: Room, id: string, now: number) {
   const me = room.members[id];
   if (!me || now - me.lastSeen > PRESENCE_MS) throw new LobbyError("Join the court first.", 401);
   const kept = { name: me.name, joinedAt: me.joinedAt };
-  Object.assign(room, createRoom());
+  Object.assign(room, createRoom(room.capacity, room.winnerSitsOut, room.ownerId));
   room.members[id] = { name: kept.name, lastSeen: now, joinedAt: kept.joinedAt, seatId: null, entered: true, misses: 0 };
   assignSeats(room, now);
   touch(room);
@@ -158,7 +159,17 @@ export function nextPrincess(room: Room, preferences: Preferences, now: number) 
   const winner = room.winner;
   // Preserve the winning identity in the lineage; the same player returns under a new name.
   room.creator = { name: winner.name, memberId: winner.memberId };
-  if (winner.memberId && room.members[winner.memberId]) renamePlayer(room, winner.memberId);
+  const previousAdvisor = room.advisorId;
+  room.advisorId = room.winnerSitsOut ? winner.memberId : null;
+  if (previousAdvisor && previousAdvisor !== room.advisorId && room.members[previousAdvisor]) renamePlayer(room, previousAdvisor);
+  if (winner.memberId && room.members[winner.memberId]) {
+    if (room.winnerSitsOut) {
+      const seat = room.seats.find(s => s.owner === winner.memberId);
+      if (seat) { seat.owner = null; seat.name = seat.npcName; }
+      room.members[winner.memberId].seatId = null;
+    } else renamePlayer(room, winner.memberId);
+  }
+  room.lastRevealedPreference = room.preferences.prompt;
   room.preferences = structuredClone(preferences); room.reign++; room.turn = 0; room.winner = null;
   room.history = []; room.submissions = {}; room.creationPending = false; room.creationId = null;
   for (const seat of room.seats) seat.total = 0;
@@ -186,7 +197,8 @@ export function advance(room: Room, now: number) {
   for (const [id, member] of Object.entries(room.members)) if (now - member.lastSeen > 86_400_000 && id !== room.creator.memberId && id !== room.winner?.memberId) delete room.members[id];
   assignSeats(room, now);
   if (room.phase === "lobby") return;
-  const playing = seatedHumans(room, now) > 0 || winnerHere(room, now);
+  const advisorHere = room.advisorId && room.members[room.advisorId] && now - room.members[room.advisorId].lastSeen <= PRESENCE_MS;
+  const playing = seatedHumans(room, now) > 0 || winnerHere(room, now) || advisorHere;
   if (!playing) {
     if (room.pausedAt == null) { room.pausedAt = now; touch(room); }
     return;
@@ -241,7 +253,7 @@ function renamePlayer(room: Room, id: string) {
 export function ensureJoined(room: Room, id: string, now: number) {
   if (!room.members[id]) join(room, id, freshName(room), now);
   // Existing courts may still have a seated-out advisor from the old rule.
-  if (room.creator.memberId === id && room.members[id].name === room.creator.name) renamePlayer(room, id);
+  if (room.advisorId !== id && room.creator.memberId === id && room.members[id].name === room.creator.name) renamePlayer(room, id);
   heartbeat(room, id, now);
 }
 export function submit(room: Room, id: string, key: unknown, value: unknown, now: number) {
@@ -287,6 +299,7 @@ export function view(room: Room, id: string | null, now: number): RoomView {
   const waiting = ["dialogue", "evaluating"].includes(room.phase);
   const dialogue = own && own.by === id ? { text: own.text, reply: waiting ? "" : own.reply, feedback: waiting ? "" : own.feedback, pending: own.pending, mode: own.mode, timedOut: own.timedOut } : null;
   return {
+    capacity: room.capacity ?? 5, winnerSitsOut: !!room.winnerSitsOut, canConfigure: !!id && room.ownerId === id,
     id: room.id, revision: room.revision, reign: room.reign, turn: room.turn, phase: room.phase, deadline: ["dialogue", "feedback"].includes(room.phase) ? room.deadline : null, serverNow: now, turnKey: turnKey(room),
     speakerId: room.phase === "results" ? room.seats[room.speaker]?.id ?? null : null,
     thinking: room.phase === "evaluating",
@@ -305,7 +318,7 @@ export function view(room: Room, id: string | null, now: number): RoomView {
       const scored = visible && !!line && !!submission && !submission.pending;
       return { id: s.id, name: s.name, kind: s.owner ? "human" as const : "npc" as const, total: s.total, liked: likedScore(scores), submitted: !!submission, lastScore: ["feedback", "reveal", "creating"].includes(room.phase) ? submission?.score ?? null : null, line, mark: visible && submission && !submission.pending ? markOutOfTen(submission.score) ?? 0 : null, spokenAt: scored && (room.phase !== "results" || room.seats.indexOf(s) === room.speaker) ? submission.at || null : null, note: scored ? submission.feedback : null };
     }),
-    you: member ? { name: member.name, seatId: seat?.id ?? null, role: seat ? "suitor" : "spectator", submitted: !!own, dialogue } : null,
+    you: member ? { name: member.name, seatId: seat?.id ?? null, role: room.advisorId === id ? "advisor" : seat ? "suitor" : "spectator", submitted: !!own, dialogue } : null,
     creatorName: room.creator.name, winner: room.winner ? { seatId: room.winner.seatId, name: room.winner.name, total: room.winner.total } : null,
     prompt: questionFor(room.reign, room.turn).question, revealedPreference: ["reveal", "creating"].includes(room.phase) ? room.preferences.prompt : null,
     canCreate: room.phase === "creating" && !!id && room.winner?.memberId === id && !!member,

@@ -5,7 +5,8 @@ import { PREFERENCE_LIMIT, PREFERENCE_EDIT_LIMIT } from "./settings";
 import type { Preferences, Room, RoomView } from "./types";
 
 export type Command = {
-  action: "sync" | "say" | "next" | "reset" | "enter" | "create" | "finishRound" | "finishCreation";
+  action: "configure" | "sync" | "say" | "next" | "reset" | "enter" | "create" | "finishRound" | "finishCreation";
+  lobbyId?: string; capacity?: number; winnerSitsOut?: boolean;
   id: string; key?: string; text?: string; live?: boolean; speakerId?: string;
   evaluations?: Evaluation[]; preferences?: Preferences | null;
 };
@@ -31,6 +32,17 @@ export function execute(room: Room, command: Command, now: number): CommandResul
       finishRound(room, room.evaluation.key, room.evaluation.owner, undefined, now);
     }
     if (!room.members[id]) throw new LobbyError("The court is reconnecting...", 401);
+    if (action === "configure") {
+      if (room.ownerId !== id) throw new LobbyError("Only the lobby creator can change these settings.", 403);
+      if (command.capacity !== undefined) {
+        if (!Number.isInteger(command.capacity) || command.capacity < 2 || command.capacity > 15) throw new LobbyError("Choose 2–15 players.");
+        if (room.phase !== "lobby" && command.capacity !== room.capacity) throw new LobbyError("Change the player limit before the contest starts.");
+        if (room.seats.filter(s => s.owner).length > command.capacity) throw new LobbyError("The player limit cannot be below the number seated.");
+        room.capacity = command.capacity;
+      }
+      if (command.winnerSitsOut !== undefined) room.winnerSitsOut = command.winnerSitsOut;
+      room.revision++;
+    }
     if (action === "reset") resetCourt(room, id, now);
     if (action === "enter") enterCourt(room, id, now);
     // Ignore duplicate or stale clicks from another tab viewing the same result.

@@ -52,7 +52,9 @@ export function Conversation({ game }: { game: GameController }) {
         ? `Her secret: “${state.revealedPreference}”`
         : state.phase === "lobby"
           ? "The court is waiting. Enter to begin."
-          : me.role === "spectator"
+          : me.role === "advisor"
+            ? "You’re watching this contest. You’ll rejoin the next one."
+            : me.role === "spectator"
               ? "You’ll automatically take the next available NPC seat."
               : state.thinking && speaker && !speaker.line
                 ? `${speaker.name} is thinking…`
@@ -158,6 +160,10 @@ export function Conversation({ game }: { game: GameController }) {
                 : "Send →"}
           </button>
         </form>
+      ) : me?.role === "spectator" && state.seats.some(s => s.kind === "npc" && !(state.winner?.seatId === s.id && ["reveal", "creating"].includes(state.phase))) ? (
+        <button className="mt-1 w-fit border-2 border-ink bg-ink px-4 py-2 text-paper" type="button" disabled={busy || !connected} onClick={() => void game.enter()}>
+          {busy ? "…" : "Take an NPC seat →"}
+        </button>
       ) : canAdvance ? (
         <button
           className="mt-1 w-fit border-2 border-ink bg-ink px-4 py-2 text-paper"
@@ -178,7 +184,9 @@ export function Conversation({ game }: { game: GameController }) {
                 ? remaining === 0
                   ? "Continuing…"
                   : `${state.turn === TURN_COUNT - 1 ? "Winner revealed" : "Next turn starts"} in ${remaining ?? "…"}s.`
-                : state.phase === "lobby"
+                : me?.role === "advisor"
+                  ? "You’re watching this contest. You’ll rejoin the next one."
+                  : state.phase === "lobby"
                   ? "Waiting for a human to enter."
                   : speaker
                     ? `Waiting for ${speaker.name}.`

@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { after, NextRequest, NextResponse } from "next/server";
 import { evaluateRound, interpret } from "@/lib/lobby/ai";
 import { LobbyError } from "@/lib/lobby/engine";
@@ -20,18 +20,23 @@ function respond(result: CommandResult, token: string, request: NextRequest) {
   response.cookies.set(cookieName, token, { httpOnly: true, sameSite: "strict", secure: request.nextUrl.protocol === "https:", path: "/", maxAge: 60 * 60 * 24 * 30 });
   return response;
 }
-function schedule(result: CommandResult, id: string) {
+function schedule(result: CommandResult, id: string, lobbyId?: string) {
   const job = result.evaluation;
   if (!job || result.error) return;
   after(async () => {
     try {
       const evaluations = await evaluateRound(job);
-      await dispatch({ action: "finishRound", id, key: job.key, ...(evaluations ? { evaluations } : {}) });
+      await dispatch({ action: "finishRound", lobbyId, id, key: job.key, ...(evaluations ? { evaluations } : {}) });
     } catch (error) {
       console.error("Princess dialogue failed", error);
-      await dispatch({ action: "finishRound", id, key: job.key }).catch(() => undefined);
+      await dispatch({ action: "finishRound", lobbyId, id, key: job.key }).catch(() => undefined);
     }
   });
+}
+function requestedLobby(request: NextRequest) {
+  const id = request.nextUrl.searchParams.get("lobby") || undefined;
+  if (id && !/^[a-zA-Z0-9-]{8,64}$/.test(id)) throw new LobbyError("Invalid lobby URL.");
+  return id;
 }
 function errorResponse(error: unknown) {
   if (error instanceof LobbyError) return json({ error: error.message }, error.status);
@@ -42,8 +47,8 @@ export async function GET(request: NextRequest) {
   try {
     const token = session(request);
     const id = hash(token);
-    const result = await dispatch({ action: "sync", id, live: !!process.env.OPENAI_API_KEY });
-    schedule(result, id);
+    const result = await dispatch({ action: "sync", id, lobbyId: requestedLobby(request), live: !!process.env.OPENAI_API_KEY });
+    schedule(result, id, requestedLobby(request));
     return respond(result, token, request);
   } catch (error) { return errorResponse(error); }
 }
@@ -54,24 +59,36 @@ export async function POST(request: NextRequest) {
     if (origin && origin !== expectedOrigin) throw new LobbyError("Join from the game page.", 403);
     const raw = await request.text();
     if (raw.length > 2000) throw new LobbyError("That message is too long.", 413);
-    let body: { action?: unknown; text?: unknown; turnKey?: unknown; speakerId?: unknown };
+    let body: { action?: unknown; text?: unknown; turnKey?: unknown; speakerId?: unknown; capacity?: unknown; winnerSitsOut?: unknown };
     try { body = JSON.parse(raw); } catch { throw new LobbyError("Invalid request."); }
-    if (!body || typeof body !== "object" || !["say", "next", "reset", "enter", "create"].includes(String(body.action))) throw new LobbyError("Unknown action.");
+    if (!body || typeof body !== "object" || !["newLobby", "configure", "say", "next", "reset", "enter", "create"].includes(String(body.action))) throw new LobbyError("Unknown action.");
     if (body.text !== undefined && typeof body.text !== "string") throw new LobbyError("Invalid answer.");
     if (body.turnKey !== undefined && typeof body.turnKey !== "string") throw new LobbyError("Invalid turn.");
     if (body.speakerId !== undefined && typeof body.speakerId !== "string") throw new LobbyError("Invalid result.");
     const token = session(request);
     const id = hash(token);
-    const command: Command = { action: body.action as Command["action"], id, live: !!process.env.OPENAI_API_KEY };
+    if (body.capacity !== undefined && (typeof body.capacity !== "number" || !Number.isInteger(body.capacity) || body.capacity < 2 || body.capacity > 15)) throw new LobbyError("Choose 2–15 players.");
+    if (body.winnerSitsOut !== undefined && typeof body.winnerSitsOut !== "boolean") throw new LobbyError("Invalid winner setting.");
+    if (body.action === "newLobby") {
+      const lobbyId = randomUUID();
+      const created = await dispatch({ action: "sync", id, lobbyId, capacity: typeof body.capacity === "number" ? body.capacity : 15, winnerSitsOut: body.winnerSitsOut === true });
+      const response = json({ url: `/l/${lobbyId}` });
+      const cookie = respond(created, token, request).headers.get("set-cookie");
+      if (cookie) response.headers.set("set-cookie", cookie);
+      return response;
+    }
+    const command: Command = { action: body.action as Command["action"], id, lobbyId: requestedLobby(request), live: !!process.env.OPENAI_API_KEY };
+    if (typeof body.capacity === "number") command.capacity = body.capacity;
+    if (typeof body.winnerSitsOut === "boolean") command.winnerSitsOut = body.winnerSitsOut;
     if (typeof body.text === "string") command.text = body.text;
     if (typeof body.turnKey === "string") command.key = body.turnKey;
     if (typeof body.speakerId === "string") command.speakerId = body.speakerId;
     let result = await dispatch(command);
     if (result.creation && !result.error) {
       const c = result.creation;
-      result = await dispatch({ action: "finishCreation", id, key: c.key, preferences: await interpret(c.prompt), live: !!process.env.OPENAI_API_KEY });
+      result = await dispatch({ action: "finishCreation", lobbyId: requestedLobby(request), id, key: c.key, preferences: await interpret(c.prompt), live: !!process.env.OPENAI_API_KEY });
     }
-    schedule(result, id);
+    schedule(result, id, requestedLobby(request));
     return respond(result, token, request);
   } catch (error) { return errorResponse(error); }
 }

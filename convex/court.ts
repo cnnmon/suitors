@@ -7,6 +7,11 @@ import { reignRecord, roundRecord } from "../lib/lobby/archive";
 import { lineagesFrom } from "../lib/lobby/lineage";
 import type { Room } from "../lib/lobby/types";
 
+function lobbyKey(id?: string) {
+  if (!id || id === "shared") return "shared";
+  if (!/^[a-zA-Z0-9-]{8,64}$/.test(id)) throw new ConvexError("Invalid lobby URL");
+  return id;
+}
 function authorize(secret: string) {
   if (!process.env.SUITORS_SERVER_SECRET || secret !== process.env.SUITORS_SERVER_SECRET) throw new ConvexError("Unauthorized");
 }
@@ -26,14 +31,23 @@ async function archive(ctx: MutationCtx, room: Room, now: number, reset = false)
 // is readable directly from a browser, even if someone knows the deployment URL.
 export const dispatch = mutation({
   args: { secret: v.string(), command: v.object({
-    action: v.union(v.literal("sync"), v.literal("say"), v.literal("next"), v.literal("reset"), v.literal("enter"), v.literal("create"), v.literal("finishRound"), v.literal("finishCreation")),
+    action: v.union(v.literal("configure"), v.literal("sync"), v.literal("say"), v.literal("next"), v.literal("reset"), v.literal("enter"), v.literal("create"), v.literal("finishRound"), v.literal("finishCreation")),
+    lobbyId: v.optional(v.string()), capacity: v.optional(v.number()), winnerSitsOut: v.optional(v.boolean()),
     id: v.string(), key: v.optional(v.string()), speakerId: v.optional(v.string()), text: v.optional(v.string()), live: v.optional(v.boolean()),
     evaluations: v.optional(v.array(v.object({ seatId: v.string(), text: v.string(), reply: v.string(), score: v.number(), feedback: v.string() }))), preferences: v.optional(v.union(preferences, v.null())),
   }) },
   handler: async (ctx, args): Promise<CommandResult> => {
     authorize(args.secret);
-    const saved = await ctx.db.query("lobbies").withIndex("by_key", q => q.eq("key", "shared")).unique();
-    const room = (saved?.room ?? createRoom()) as Room;
+    const key = lobbyKey(args.command.lobbyId);
+    const saved = await ctx.db.query("lobbies").withIndex("by_key", q => q.eq("key", key)).unique();
+    const capacity = args.command.capacity ?? (key === "shared" ? 5 : 15);
+    if (!saved && (!Number.isInteger(capacity) || capacity < 2 || capacity > 15)) throw new ConvexError("Choose 2–15 players");
+    const room = (saved?.room ?? createRoom(capacity, args.command.winnerSitsOut, key === "shared" ? null : args.command.id)) as Room;
+    // Backfill existing courts from the archived, already-revealed reign only.
+    if (room.lastRevealedPreference === undefined) {
+      const previous = room.reign > 1 ? await ctx.db.query("reigns").withIndex("by_key", q => q.eq("key", `${room.id}:${room.reign - 1}`)).unique() : null;
+      room.lastRevealedPreference = previous?.status === "completed" ? previous.preferences.prompt : null;
+    }
     const before = structuredClone(room);
     const now = Date.now();
     const result = execute(room, args.command as Command, now);
@@ -43,16 +57,16 @@ export const dispatch = mutation({
       await archive(ctx, room, now);
     }
     if (saved) await ctx.db.patch(saved._id, { room, updatedAt: now });
-    else await ctx.db.insert("lobbies", { key: "shared", room, updatedAt: now });
+    else await ctx.db.insert("lobbies", { key, room, updatedAt: now });
     return result;
   },
 });
 
 export const lineages = query({
-  args: { secret: v.string() },
+  args: { secret: v.string(), lobbyId: v.optional(v.string()) },
   handler: async (ctx, args) => {
     authorize(args.secret);
-    const lobby = await ctx.db.query("lobbies").withIndex("by_key", q => q.eq("key", "shared")).unique();
+    const lobby = await ctx.db.query("lobbies").withIndex("by_key", q => q.eq("key", lobbyKey(args.lobbyId))).unique();
     if (!lobby) return [];
     const gameId = (lobby.room as Room).id;
     const reigns = await ctx.db.query("reigns").withIndex("by_game", q => q.eq("gameId", gameId)).collect();

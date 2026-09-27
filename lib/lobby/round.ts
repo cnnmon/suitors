@@ -4,7 +4,7 @@ import { questionFor } from "./prompts";
 import type { Preferences, Room } from "./types";
 
 export type Evaluation = { seatId: string; text: string; reply: string; feedback: string; score: number };
-export type RoundJob = { key: string; question: string; preferences: Preferences; suitors: Array<{ seatId: string; name: string; npc: boolean; voice: string; text: string; timedOut: boolean }> };
+export type RoundJob = { key: string; question: string; preferences: Preferences; lastRevealedPreference: string | null; suitors: Array<{ seatId: string; name: string; npc: boolean; voice: string; text: string; timedOut: boolean }> };
 const voices = ["playful", "gentle", "bold", "surreal", "skeptical"];
 export const EVALUATION_MS = 40_000;
 export function shortText(text: string, characters: number, words: number) {
@@ -27,6 +27,7 @@ export function claimRound(room: Room, owner: string, now: number, live: boolean
   room.evaluation = { owner, key: turnKey(room) };
   room.revision++;
   const job: RoundJob = { key: turnKey(room), question: questionFor(room.reign, room.turn).question,
+    lastRevealedPreference: room.lastRevealedPreference ?? null,
     preferences: structuredClone(room.preferences), suitors: room.seats.map((seat, index) => ({
       seatId: seat.id, name: seat.name, npc: room.submissions[seat.id].by === null,
       voice: voices[index % voices.length], text: room.submissions[seat.id].text, timedOut: room.submissions[seat.id].timedOut,

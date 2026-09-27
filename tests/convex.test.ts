@@ -246,3 +246,79 @@ test("concurrent Next clicks advance only the result both players saw", async ()
   expect((await send({ ...command, id: "one" })).state.speakerId).toBe(after.speakerId);
   expect((await send({ ...command, id: "one", key: "old-turn", speakerId: after.speakerId! })).state.speakerId).toBe(after.speakerId);
 });
+
+test("two browser cookies claim distinct NPC seats even when both opened before Enter", async () => {
+  const { NextRequest } = await import("next/server");
+  const { GET, POST } = await import("../app/api/lobby/route");
+  const url = "http://localhost:3107/api/lobby";
+  const browsers = [];
+  for (let i = 0; i < 2; i++) {
+    const response = await GET(new NextRequest(url));
+    browsers.push(response.headers.get("set-cookie")!.split(";")[0]);
+  }
+  expect(browsers[0]).not.toBe(browsers[1]);
+  const states = [];
+  for (const cookie of browsers) {
+    const response = await POST(new NextRequest(url, { method: "POST", headers: { cookie }, body: JSON.stringify({ action: "enter" }) }));
+    expect(response.status).toBe(200);
+    states.push(await response.json());
+  }
+  expect(states[0].id).toBe(states[1].id);
+  expect(states[0].you.seatId).not.toBe(states[1].you.seatId);
+  expect(states[0].you.name).not.toBe(states[1].you.name);
+  expect(states[1].seats.filter((s: { kind: string }) => s.kind === "human")).toHaveLength(2);
+  for (let i = 0; i < 2; i++) {
+    const refreshed = await (await GET(new NextRequest(url, { headers: { cookie: browsers[i] } }))).json();
+    expect(refreshed.you.seatId).toBe(states[i].you.seatId);
+    expect(refreshed.you.name).toBe(states[i].you.name);
+  }
+});
+
+test("invite lobbies isolate gameplay, settings and history, and retain settings on reset", async () => {
+  const first = await send({ action: "sync", id: "host", lobbyId: "court-alpha", capacity: 2, winnerSitsOut: true });
+  const second = await send({ action: "sync", id: "host", lobbyId: "court-bravo", capacity: 15 });
+  expect(first.state.id).not.toBe(second.state.id);
+  expect(first.state.capacity).toBe(2);
+  expect(second.state.capacity).toBe(15);
+  const enter = (id: string) => send({ action: "enter", id, lobbyId: "court-alpha" });
+  await enter("host");
+  const guest = await send({ action: "sync", id: "guest", lobbyId: "court-alpha" });
+  expect(guest.state.you?.role).toBe("suitor");
+  const denied = await send({ action: "configure", id: "guest", lobbyId: "court-alpha", winnerSitsOut: false });
+  expect(denied.error?.status).toBe(403);
+  const edited = await send({ action: "configure", id: "host", lobbyId: "court-alpha", winnerSitsOut: false });
+  expect(edited.state.winnerSitsOut).toBe(false);
+  expect((await send({ action: "configure", id: "host", lobbyId: "court-alpha", capacity: 16 })).error).toBeDefined();
+  await send({ action: "say", id: "host", lobbyId: "court-alpha", key: edited.state.turnKey, text: "An answer only in alpha." });
+  const untouched = await send({ action: "sync", id: "host", lobbyId: "court-bravo" });
+  expect(untouched.state.phase).toBe("lobby");
+  expect(untouched.state.you?.submitted).toBe(false);
+  expect((await db.query(api.court.history, { secret, gameId: second.state.id })).rounds).toHaveLength(0);
+  expect(await db.query(api.court.lineages, { secret, lobbyId: "court-bravo" })).toEqual([]);
+  const reset = await send({ action: "reset", id: "host", lobbyId: "court-alpha" });
+  expect(reset.state.capacity).toBe(2);
+  expect(reset.state.canConfigure).toBe(true);
+  expect(reset.state.winnerSitsOut).toBe(false);
+  expect((await send({ action: "sync", id: "host", lobbyId: "court-bravo" })).state.id).toBe(second.state.id);
+});
+
+test("creating an invite URL preserves the host cookie and accepts distinct browser guests", async () => {
+  const { NextRequest } = await import("next/server");
+  const { GET, POST } = await import("../app/api/lobby/route");
+  const url = "http://localhost:3107/api/lobby";
+  const response = await POST(new NextRequest(url, { method: "POST", body: JSON.stringify({ action: "newLobby", capacity: 15, winnerSitsOut: true }) }));
+  expect(response.status).toBe(200);
+  const cookie = response.headers.get("set-cookie")!.split(";")[0];
+  const { url: invite } = await response.json();
+  expect(invite).toMatch(/^\/l\/[a-f0-9-]{36}$/);
+  const endpoint = `${url}?lobby=${invite.split('/').pop()}`;
+  const host = await (await GET(new NextRequest(endpoint, { headers: { cookie } }))).json();
+  expect(host.canConfigure).toBe(true);
+  expect(host.winnerSitsOut).toBe(true);
+  const guest = await (await GET(new NextRequest(endpoint))).json();
+  expect(guest.id).toBe(host.id);
+  expect(guest.canConfigure).toBe(false);
+  expect(guest.you.name).not.toBe(host.you.name);
+  expect((await GET(new NextRequest(`${url}?lobby=bad!`))).status).toBe(400);
+  expect((await POST(new NextRequest(url, { method: "POST", body: JSON.stringify({ action: "newLobby", capacity: 16 }) }))).status).toBe(400);
+});

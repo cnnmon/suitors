@@ -5,12 +5,19 @@ import { twMerge } from "tailwind-merge";
 import { useGame } from "@/hooks/useGame";
 import type { Lineage } from "@/lib/lobby/lineage";
 import { Conversation } from "./Conversation";
+import { LobbySettings } from "./LobbySettings";
 import { Stage } from "./Stage";
 import { TURN_COUNT, PREFERENCE_EDIT_LIMIT } from "@/lib/lobby/settings";
 
 const frame = "relative h-[600px] w-[980px] shrink-0 overflow-hidden";
 
-function Lineages({ onClose }: { onClose: () => void }) {
+function Lineages({
+  onClose,
+  lobbyId,
+}: {
+  onClose: () => void;
+  lobbyId?: string;
+}) {
   const [lines, setLines] = useState<Lineage[] | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -18,7 +25,10 @@ function Lineages({ onClose }: { onClose: () => void }) {
       if (event.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
-    fetch("/api/lineage", { cache: "no-store" })
+    fetch(
+      `/api/lineage${lobbyId ? `?lobby=${encodeURIComponent(lobbyId)}` : ""}`,
+      { cache: "no-store" },
+    )
       .then((response) => {
         if (!response.ok) throw new Error("lineage");
         return response.json() as Promise<Lineage[]>;
@@ -26,7 +36,7 @@ function Lineages({ onClose }: { onClose: () => void }) {
       .then(setLines)
       .catch(() => setFailed(true));
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, lobbyId]);
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-6">
       <div
@@ -37,49 +47,105 @@ function Lineages({ onClose }: { onClose: () => void }) {
       >
         <header className="flex items-start justify-between gap-6 border-b border-ink/20 px-6 py-4">
           <div>
-            <h2 id="lineages" className="m-0 font-display text-xl uppercase">Past lineages</h2>
-            <p className="mt-1 mb-0 text-xs opacity-70">The winners, her tastes, and the words that won.</p>
+            <h2 id="lineages" className="m-0 font-display text-xl uppercase">
+              Past lineages
+            </h2>
+            <p className="mt-1 mb-0 text-xs opacity-70">
+              The winners, her tastes, and the words that won.
+            </p>
           </div>
-          <button className="shrink-0 px-1 text-xl leading-none no-underline" aria-label="Close lineages" autoFocus onClick={onClose}>×</button>
+          <button
+            className="shrink-0 px-1 text-xl leading-none no-underline"
+            aria-label="Close lineages"
+            autoFocus
+            onClick={onClose}
+          >
+            ×
+          </button>
         </header>
         <div className="min-h-0 space-y-5 overflow-y-auto overscroll-contain px-6 py-5 [scrollbar-gutter:stable]">
-          {!lines && !failed && <p className="m-0" role="status">Opening the royal archive…</p>}
-          {failed && <p className="m-0" role="alert">The lineages could not be opened.</p>}
-          {lines && !lines.length && <p className="m-0">No reign has ended yet.</p>}
+          {!lines && !failed && (
+            <p className="m-0" role="status">
+              Opening the royal archive…
+            </p>
+          )}
+          {failed && (
+            <p className="m-0" role="alert">
+              The lineages could not be opened.
+            </p>
+          )}
+          {lines && !lines.length && (
+            <p className="m-0">No reign has ended yet.</p>
+          )}
           {lines?.map((line) => (
-            <section key={line.reign} className="overflow-hidden border border-ink/25 bg-white/30">
+            <section
+              key={line.reign}
+              className="overflow-hidden border border-ink/25 bg-white/30"
+            >
               <div className="flex items-baseline justify-between gap-4 border-b border-ink/15 px-4 py-3">
-                <h3 className="m-0 font-display text-lg uppercase break-words">{line.winner}</h3>
-                <span className="shrink-0 text-xs uppercase tracking-wider">Winner · Reign {line.reign}</span>
+                <h3 className="m-0 font-display text-lg uppercase break-words">
+                  {line.winner}
+                </h3>
+                <span className="shrink-0 text-xs uppercase tracking-wider">
+                  Winner · Reign {line.reign}
+                </span>
               </div>
               <div className="border-b border-ink/15 bg-ink/5 px-4 py-3">
-                <p className="m-0 text-[10px] font-bold uppercase tracking-widest opacity-60">Her hidden preferences</p>
+                <p className="m-0 text-[10px] font-bold uppercase tracking-widest opacity-60">
+                  Her hidden preferences
+                </p>
                 <p className="mt-1 mb-0 break-words">{line.preference}</p>
               </div>
               <ol className="m-0 list-none divide-y divide-ink/15 p-0">
                 {line.said.map((speech, index) => (
-                  <li key={`${index}:${speech.question}`} className="grid grid-cols-[20px_minmax(0,1fr)] gap-3 px-4 py-3">
-                    <span className="pt-0.5 text-xs opacity-50">{String(index + 1).padStart(2, "0")}</span>
+                  <li
+                    key={`${index}:${speech.question}`}
+                    className="grid grid-cols-[20px_minmax(0,1fr)] gap-3 px-4 py-3"
+                  >
+                    <span className="pt-0.5 text-xs opacity-50">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
                     <div className="min-w-0">
-                      <p className="m-0 text-xs opacity-70 break-words">{speech.question}</p>
-                      <blockquote className="mt-1 mb-0 ml-0 border-l-2 border-ink/30 pl-3 font-medium break-words">“{speech.text}”</blockquote>
+                      <p className="m-0 text-xs opacity-70 break-words">
+                        {speech.question}
+                      </p>
+                      <blockquote className="mt-1 mb-0 ml-0 border-l-2 border-ink/30 pl-3 font-medium break-words">
+                        “{speech.text}”
+                      </blockquote>
                     </div>
                   </li>
                 ))}
               </ol>
-              {!line.said.length && <p className="m-0 px-4 py-3 opacity-60">No answers recorded.</p>}
+              {!line.said.length && (
+                <p className="m-0 px-4 py-3 opacity-60">No answers recorded.</p>
+              )}
             </section>
           ))}
         </div>
         <footer className="flex justify-end border-t border-ink/20 px-6 py-3">
-          <button className="border border-ink bg-ink px-4 py-2 text-xs text-paper no-underline" onClick={onClose}>Back to court →</button>
+          <button
+            className="border border-ink bg-ink px-4 py-2 text-xs text-paper no-underline"
+            onClick={onClose}
+          >
+            Back to court →
+          </button>
         </footer>
       </div>
     </div>
   );
 }
 
-function HowToPlay({ onClose, required = false }: { onClose: () => void; required?: boolean }) {
+function HowToPlay({
+  onClose,
+  required = false,
+  onCreateLobby,
+  winnerSitsOut = false,
+}: {
+  onClose: () => void;
+  required?: boolean;
+  onCreateLobby?: () => void;
+  winnerSitsOut?: boolean;
+}) {
   useEffect(() => {
     if (required) return;
     const onKey = (event: KeyboardEvent) => {
@@ -105,26 +171,51 @@ function HowToPlay({ onClose, required = false }: { onClose: () => void; require
         </p>
         <p className="m-0">
           After {TURN_COUNT} turns, the highest-scoring suitor wins her hand and
-          reveals her preferences. You may change up to {PREFERENCE_EDIT_LIMIT}
-          {" "}characters of her tastes, then rejoin the next reign under a new name.
+          reveals her preferences. You may change up to {PREFERENCE_EDIT_LIMIT}{" "}
+          characters of her tastes, then{" "}
+          {winnerSitsOut
+            ? "watch the next contest."
+            : "rejoin the next reign under a new name."}
         </p>
-        <button
-          className="w-fit border-2 border-ink bg-ink px-4 py-2 text-paper"
-          autoFocus
-          onClick={onClose}
-        >
-          Enter the court
-        </button>
+        <div className="flex justify-center items-center flex-col gap-2">
+          <button
+            className="w-fit border-2 border-ink bg-ink px-4 py-2 text-paper"
+            autoFocus
+            onClick={onClose}
+          >
+            Enter the public court
+          </button>
+          {onCreateLobby && (
+            <button className="text-sm" onClick={onCreateLobby}>
+              Create a lobby for friends
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-export function Game() {
-  const game = useGame();
+export function Game({ lobbyId }: { lobbyId?: string }) {
+  const game = useGame(lobbyId);
   const { state, connected, clock } = game;
   const [intro, setIntro] = useState(true);
   const [lineages, setLineages] = useState(false);
+  const [settingsMode, setSettingsMode] = useState<"create" | "edit" | null>(
+    null,
+  );
+  const [invite, setInvite] = useState("");
+  const [copied, setCopied] = useState(false);
+  async function copyInvite() {
+    const url = `${window.location.origin}/l/${lobbyId}`;
+    setInvite(url);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  }
   const closeIntro = useCallback(() => setIntro(false), []);
 
   if (!state) {
@@ -153,6 +244,35 @@ export function Game() {
           the ai princess
         </h1>
         <div className="grid shrink-0 justify-items-end gap-1 whitespace-nowrap">
+          {lobbyId && (
+            <span className="bg-paper px-1 text-xs">
+              Invite lobby ·{" "}
+              {state.seats.filter((s) => s.kind === "human").length}/
+              {state.capacity} players
+            </span>
+          )}
+          <div className="flex gap-3 bg-paper px-1 text-xs">
+            <button onClick={() => setSettingsMode("create")}>
+              Create lobby
+            </button>
+            {lobbyId && (
+              <button onClick={() => void copyInvite()}>
+                {copied ? "Link copied!" : "Copy invite link"}
+              </button>
+            )}
+            {state.canConfigure && (
+              <button onClick={() => setSettingsMode("edit")}>Settings</button>
+            )}
+          </div>
+          {invite && (
+            <input
+              aria-label="Invite URL"
+              readOnly
+              value={invite}
+              onFocus={(e) => e.currentTarget.select()}
+              className="w-64 border border-ink bg-paper px-2 text-xs"
+            />
+          )}
           <span
             className={twMerge(
               "bg-paper px-1 before:text-[#9c7b6a] before:content-['⋅_']",
@@ -223,10 +343,14 @@ export function Game() {
           game={game}
         />
       </div>
-        <footer className="absolute p-4 bottom-0 right-0">
+      <footer className="absolute p-4 bottom-0 right-0">
         {state && (
           <span className="flex shrink-0 gap-3">
-            <button className="bg-paper" disabled={game.busy} onClick={() => void game.reset()}>
+            <button
+              className="bg-paper"
+              disabled={game.busy}
+              onClick={() => void game.reset()}
+            >
               reset
             </button>
             <button className="bg-paper" onClick={() => setLineages(true)}>
@@ -238,13 +362,31 @@ export function Game() {
       {(state.phase === "lobby" || intro) && (
         <HowToPlay
           required={state.phase === "lobby"}
+          winnerSitsOut={state.winnerSitsOut}
+          onCreateLobby={() => setSettingsMode("create")}
           onClose={() => {
             setIntro(false);
-            if (state.phase === "lobby") void game.enter();
+            if (state.phase === "lobby" || state.you?.role === "spectator")
+              void game.enter();
           }}
         />
       )}
-      {lineages && <Lineages onClose={() => setLineages(false)} />}
+      {lineages && (
+        <Lineages lobbyId={lobbyId} onClose={() => setLineages(false)} />
+      )}
+      {settingsMode && (
+        <LobbySettings
+          key={settingsMode}
+          onClose={() => setSettingsMode(null)}
+          initial={
+            settingsMode === "edit"
+              ? { capacity: state.capacity, winnerSitsOut: state.winnerSitsOut }
+              : undefined
+          }
+          onSave={settingsMode === "edit" ? game.configure : undefined}
+          started={settingsMode === "edit" && state.phase !== "lobby"}
+        />
+      )}
     </main>
   );
 }

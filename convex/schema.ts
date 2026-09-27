@@ -11,10 +11,11 @@ const winner = v.union(v.object({ seatId: v.string(), name: v.string(), memberId
 const seat = v.object({ id: v.string(), npcName: v.string(), name: v.string(), owner: nullableString, total: v.number() });
 const submission = v.object({ text: v.string(), reply: v.string(), feedback: v.string(), score: v.number(), features, by: nullableString, mode: v.union(v.literal("live"), v.literal("scripted")), pending: v.boolean(), timedOut: v.boolean(), at: v.number() });
 export const room = v.object({
+  capacity: v.optional(v.number()), winnerSitsOut: v.optional(v.boolean()), ownerId: v.optional(nullableString), advisorId: v.optional(nullableString),
   version: v.literal(1), id: v.string(), revision: v.number(), reign: v.number(), turn: v.number(), phase, speaker: v.number(),
   deadline: nullableNumber, turnStartedAt: v.number(), seats: v.array(seat),
   members: v.record(v.string(), v.object({ name: v.string(), lastSeen: v.number(), joinedAt: v.number(), seatId: nullableString, misses: v.optional(v.number()), entered: v.optional(v.boolean()) })),
-  preferences, creator, winner, submissions: v.record(v.string(), submission), history: v.array(v.record(v.string(), submission)),
+  preferences, lastRevealedPreference: v.optional(nullableString), creator, winner, submissions: v.record(v.string(), submission), history: v.array(v.record(v.string(), submission)),
   creationPending: v.boolean(), creationId: nullableString, pausedAt: v.optional(v.union(v.number(), v.null())),
   evaluation: v.optional(v.union(v.object({ owner: v.string(), key: v.string() }), v.null())),
 });

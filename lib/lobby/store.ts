@@ -16,7 +16,7 @@ export async function dispatch(command: Command): Promise<CommandResult> {
   return convex.mutation(api.court.dispatch, { secret, command });
 }
 
-export async function lineages(): Promise<Lineage[]> {
+export async function lineages(lobbyId?: string): Promise<Lineage[]> {
   const { secret, client: convex } = client();
-  return convex.query(api.court.lineages, { secret });
+  return convex.query(api.court.lineages, { secret, ...(lobbyId ? { lobbyId } : {}) });
 }
