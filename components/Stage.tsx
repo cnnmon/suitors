@@ -39,14 +39,18 @@ function Sign({
 }
 
 export function Stage({ state, now }: { state: RoomView; now: number }) {
-  const sign = responseSign(state.seats, state.phase === "results" ? state.speakerId : null);
+  const sign = responseSign(
+    state.seats,
+    state.phase === "results" ? state.speakerId : null,
+  );
   const remaining = state.deadline
     ? Math.max(0, Math.ceil((state.deadline - now) / 1000))
     : null;
   const princessQuote =
     sign?.note ||
     state.reply ||
-    (state.thinking && state.seats.some((seat) => seat.id === state.speakerId && seat.line));
+    (state.thinking &&
+      state.seats.some((seat) => seat.id === state.speakerId && seat.line));
   const spread = state.seats.some((seat) => seat.line);
   const picked = state.winner;
   const seats = [...state.seats].sort(
@@ -68,7 +72,7 @@ export function Stage({ state, now }: { state: RoomView; now: number }) {
             <br />A new princess is born
           </p>
           <img
-            className={twMerge("block h-auto w-60", pixel)}
+            className={twMerge("block h-auto w-80", pixel)}
             src="/art/win.gif"
             width={137}
             height={136}
@@ -134,7 +138,11 @@ export function Stage({ state, now }: { state: RoomView; now: number }) {
                     />
                   </div>
                   <div
-                    className={dense ? "relative flex h-20 w-20" : "relative h-50 flex w-50"}
+                    className={
+                      dense
+                        ? "relative flex h-20 w-20"
+                        : "relative h-50 flex w-50"
+                    }
                     style={{
                       zIndex: index + 1,
                     }}

@@ -28,6 +28,10 @@ export function Conversation({ game }: { game: GameController }) {
     state.phase === "dialogue" &&
     !me.submitted &&
     remaining !== 0;
+  const manualAdvance = !!me && !state.timersEnabled && (
+    ["feedback", "reveal"].includes(state.phase) ||
+    (state.phase === "creating" && state.seats.find(s => s.id === state.winner?.seatId)?.kind === "npc")
+  );
   const canAdvance =
     !!me &&
     state.phase === "results" &&
@@ -164,14 +168,14 @@ export function Conversation({ game }: { game: GameController }) {
         <button className="mt-1 w-fit border-2 border-ink bg-ink px-4 py-2 text-paper" type="button" disabled={busy || !connected} onClick={() => void game.enter()}>
           {busy ? "…" : "Take an NPC seat →"}
         </button>
-      ) : canAdvance ? (
+      ) : canAdvance || manualAdvance ? (
         <button
           className="mt-1 w-fit border-2 border-ink bg-ink px-4 py-2 text-paper"
           type="button"
           disabled={busy || !connected}
           onClick={() => void game.next()}
         >
-          {busy ? "…" : "Next →"}
+          {busy ? "…" : state.phase === "feedback" ? state.turn === TURN_COUNT - 1 ? "Reveal winner →" : "Next question →" : state.phase === "reveal" ? "Continue →" : state.phase === "creating" ? "Meet the next princess →" : "Next →"}
         </button>
       ) : !["dialogue", "evaluating"].includes(state.phase) ||
         me?.role !== "suitor" ? (
@@ -179,7 +183,7 @@ export function Conversation({ game }: { game: GameController }) {
           {state.phase === "reveal"
             ? "Ties: last-turn score, then seat order. Winner edits the next princess’s preferences shortly."
             : state.phase === "creating"
-              ? `The court continues automatically if no prompt arrives in ${CREATE_MS / 1000}s.`
+              ? state.timersEnabled ? `The court continues automatically if no prompt arrives in ${CREATE_MS / 1000}s.` : "Waiting for the winner to set the next princess’s preferences."
               : state.phase === "feedback"
                 ? remaining === 0
                   ? "Continuing…"
@@ -187,7 +191,7 @@ export function Conversation({ game }: { game: GameController }) {
                 : me?.role === "advisor"
                   ? "You’re watching this contest. You’ll rejoin the next one."
                   : state.phase === "lobby"
-                  ? "Waiting for a human to enter."
+                  ? `Waiting for players: ${state.seats.filter(s => s.kind === "human").length}/${state.minPlayers ?? 1} needed to start. Share the invite link.`
                   : speaker
                     ? `Waiting for ${speaker.name}.`
                     : "Waiting for the rest of the court…"}

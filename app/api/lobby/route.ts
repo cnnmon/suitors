@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     if (origin && origin !== expectedOrigin) throw new LobbyError("Join from the game page.", 403);
     const raw = await request.text();
     if (raw.length > 2000) throw new LobbyError("That message is too long.", 413);
-    let body: { action?: unknown; text?: unknown; turnKey?: unknown; speakerId?: unknown; capacity?: unknown; winnerSitsOut?: unknown };
+    let body: { action?: unknown; text?: unknown; turnKey?: unknown; speakerId?: unknown; capacity?: unknown; winnerSitsOut?: unknown; minPlayers?: unknown; maxPlayers?: unknown; timersEnabled?: unknown; phase?: unknown };
     try { body = JSON.parse(raw); } catch { throw new LobbyError("Invalid request."); }
     if (!body || typeof body !== "object" || !["newLobby", "configure", "say", "next", "reset", "enter", "create"].includes(String(body.action))) throw new LobbyError("Unknown action.");
     if (body.text !== undefined && typeof body.text !== "string") throw new LobbyError("Invalid answer.");
@@ -69,15 +69,28 @@ export async function POST(request: NextRequest) {
     const id = hash(token);
     if (body.capacity !== undefined && (typeof body.capacity !== "number" || !Number.isInteger(body.capacity) || body.capacity < 2 || body.capacity > 15)) throw new LobbyError("Choose 2–15 players.");
     if (body.winnerSitsOut !== undefined && typeof body.winnerSitsOut !== "boolean") throw new LobbyError("Invalid winner setting.");
+    if (body.phase !== undefined && typeof body.phase !== "string") throw new LobbyError("Invalid phase.");
+    if (body.timersEnabled !== undefined && typeof body.timersEnabled !== "boolean") throw new LobbyError("Invalid timers setting.");
+    for (const field of ["minPlayers", "maxPlayers"] as const) {
+      const value = body[field];
+      if (value !== undefined && value !== null && (typeof value !== "number" || !Number.isInteger(value) || value < (field === "minPlayers" ? 1 : 2) || value > 15)) throw new LobbyError("Invalid player limits.");
+    }
+    if (typeof body.minPlayers === "number" && body.minPlayers > (typeof body.maxPlayers === "number" ? body.maxPlayers : typeof body.capacity === "number" ? body.capacity : 15)) throw new LobbyError("Minimum cannot exceed maximum.");
+    const settings = {
+      ...(body.minPlayers === null || typeof body.minPlayers === "number" ? { minPlayers: body.minPlayers } : {}),
+      ...(body.maxPlayers === null || typeof body.maxPlayers === "number" ? { maxPlayers: body.maxPlayers } : {}),
+      ...(typeof body.timersEnabled === "boolean" ? { timersEnabled: body.timersEnabled } : {}),
+    };
     if (body.action === "newLobby") {
       const lobbyId = randomUUID();
-      const created = await dispatch({ action: "sync", id, lobbyId, capacity: typeof body.capacity === "number" ? body.capacity : 15, winnerSitsOut: body.winnerSitsOut === true });
+      const created = await dispatch({ ...settings, action: "sync", id, lobbyId, ...(typeof body.capacity === "number" ? { capacity: body.capacity } : {}), winnerSitsOut: body.winnerSitsOut === true });
       const response = json({ url: `/l/${lobbyId}` });
       const cookie = respond(created, token, request).headers.get("set-cookie");
       if (cookie) response.headers.set("set-cookie", cookie);
       return response;
     }
-    const command: Command = { action: body.action as Command["action"], id, lobbyId: requestedLobby(request), live: !!process.env.OPENAI_API_KEY };
+    const command: Command = { ...settings, action: body.action as Command["action"], id, lobbyId: requestedLobby(request), live: !!process.env.OPENAI_API_KEY };
+    if (typeof body.phase === "string") command.phase = body.phase;
     if (typeof body.capacity === "number") command.capacity = body.capacity;
     if (typeof body.winnerSitsOut === "boolean") command.winnerSitsOut = body.winnerSitsOut;
     if (typeof body.text === "string") command.text = body.text;

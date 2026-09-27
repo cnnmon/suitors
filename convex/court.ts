@@ -32,6 +32,7 @@ async function archive(ctx: MutationCtx, room: Room, now: number, reset = false)
 export const dispatch = mutation({
   args: { secret: v.string(), command: v.object({
     action: v.union(v.literal("configure"), v.literal("sync"), v.literal("say"), v.literal("next"), v.literal("reset"), v.literal("enter"), v.literal("create"), v.literal("finishRound"), v.literal("finishCreation")),
+    phase: v.optional(v.string()), minPlayers: v.optional(v.union(v.number(), v.null())), maxPlayers: v.optional(v.union(v.number(), v.null())), timersEnabled: v.optional(v.boolean()),
     lobbyId: v.optional(v.string()), capacity: v.optional(v.number()), winnerSitsOut: v.optional(v.boolean()),
     id: v.string(), key: v.optional(v.string()), speakerId: v.optional(v.string()), text: v.optional(v.string()), live: v.optional(v.boolean()),
     evaluations: v.optional(v.array(v.object({ seatId: v.string(), text: v.string(), reply: v.string(), score: v.number(), feedback: v.string() }))), preferences: v.optional(v.union(preferences, v.null())),
@@ -40,9 +41,11 @@ export const dispatch = mutation({
     authorize(args.secret);
     const key = lobbyKey(args.command.lobbyId);
     const saved = await ctx.db.query("lobbies").withIndex("by_key", q => q.eq("key", key)).unique();
-    const capacity = args.command.capacity ?? (key === "shared" ? 5 : 15);
+    const capacity = args.command.maxPlayers !== undefined ? args.command.maxPlayers ?? 15 : args.command.capacity ?? (key === "shared" ? 5 : 15);
     if (!saved && (!Number.isInteger(capacity) || capacity < 2 || capacity > 15)) throw new ConvexError("Choose 2–15 players");
-    const room = (saved?.room ?? createRoom(capacity, args.command.winnerSitsOut, key === "shared" ? null : args.command.id)) as Room;
+    const minimum = args.command.minPlayers ?? null;
+    if (!saved && minimum !== null && (!Number.isInteger(minimum) || minimum < 1 || minimum > capacity)) throw new ConvexError("Invalid minimum players");
+    const room = (saved?.room ?? { ...createRoom(capacity, args.command.winnerSitsOut, key === "shared" ? null : args.command.id), minPlayers: minimum, maxPlayers: args.command.maxPlayers !== undefined ? args.command.maxPlayers : args.command.capacity ?? null, timersEnabled: args.command.timersEnabled !== false }) as Room;
     // Backfill existing courts from the archived, already-revealed reign only.
     if (room.lastRevealedPreference === undefined) {
       const previous = room.reign > 1 ? await ctx.db.query("reigns").withIndex("by_key", q => q.eq("key", `${room.id}:${room.reign - 1}`)).unique() : null;

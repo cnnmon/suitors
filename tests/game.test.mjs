@@ -609,3 +609,43 @@ test('sit-out setting applies at succession and lasts exactly one contest', () =
   assert.notEqual(room.members['person-0'].name, originalName);
   assert.equal(view(room, 'person-1', room.turnStartedAt).you.role, 'suitor');
 });
+
+test('timers off allows untimed answers and manual progression through a whole reign', () => {
+  const room = start(2); room.ownerId = 'person-0';
+  room.preferences = preferences('Likes confidence.');
+  execute(room, { action: 'configure', id: 'person-0', timersEnabled: false }, 7000);
+  assert.equal(room.deadline, null);
+  tick(room, 200000);
+  assert.equal(room.phase, 'dialogue');
+  assert.equal(Object.keys(room.submissions).length, 0);
+  let now = 200001;
+  for (let turn = 0; turn < TURN_COUNT; turn++) {
+    for (const seat of room.seats.filter(s => s.owner)) execute(room, { action: 'say', id: seat.owner, key: turnKey(room), text: seat.owner === 'person-0' ? 'Trust me. I know, I am certain and confident.' : 'Hello.' }, now++);
+    while (room.phase === 'results') execute(room, { action: 'next', id: 'person-0', key: turnKey(room), phase: room.phase, speakerId: room.seats[room.speaker].id }, now++);
+    assert.equal(room.phase, 'feedback');
+    assert.equal(room.deadline, null);
+    tick(room, now += 1000);
+    assert.equal(room.phase, 'feedback');
+    execute(room, { action: 'next', id: 'person-0', key: turnKey(room), phase: 'feedback' }, now++);
+  }
+  assert.equal(room.phase, 'reveal');
+  tick(room, now += 1000);
+  assert.equal(room.phase, 'reveal');
+  execute(room, { action: 'next', id: 'person-0', key: turnKey(room), phase: 'reveal' }, now++);
+  assert.equal(room.phase, 'creating');
+  const created = execute(room, { action: 'create', id: 'person-0', key: turnKey(room), text: room.preferences.prompt }, now++);
+  assert.equal(created.error, undefined);
+  execute(room, { action: 'finishCreation', id: 'person-0', key: created.creation.key, preferences: room.preferences }, now++);
+  assert.equal(room.reign, 2);
+  assert.equal(room.deadline, null);
+  assert.equal(room.phase, 'dialogue');
+});
+
+test('minimum humans gates entry; NPCs do not count', () => {
+  const room = createRoom(5); room.minPlayers = 2;
+  ensureJoined(room, 'one', 0); enterCourt(room, 'one', 0);
+  assert.equal(room.phase, 'lobby');
+  assert.ok(room.seats.some(s => !s.owner));
+  ensureJoined(room, 'two', 1); enterCourt(room, 'two', 1);
+  assert.equal(room.phase, 'dialogue');
+});

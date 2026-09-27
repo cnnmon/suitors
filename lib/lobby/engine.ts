@@ -12,6 +12,7 @@ import type { Room, RoomView } from "./types";
 
 export function createRoom(capacity = 5, winnerSitsOut = false, ownerId: string | null = null): Room {
   return {
+    minPlayers: null, maxPlayers: null, timersEnabled: true,
     capacity, winnerSitsOut, ownerId, advisorId: null,
     version: 1, id: randomUUID(), revision: 0, reign: 1, turn: 0, phase: "lobby", speaker: 0, deadline: null, turnStartedAt: 0,
     seats: NPC_NAMES.slice(0, courtSize(0, capacity)).map((npcName, i) => ({ id: `seat-${i}`, npcName, name: npcName, owner: null, total: 0 })),
@@ -75,7 +76,7 @@ export function resetCourt(room: Room, id: string, now: number) {
   const me = room.members[id];
   if (!me || now - me.lastSeen > PRESENCE_MS) throw new LobbyError("Join the court first.", 401);
   const kept = { name: me.name, joinedAt: me.joinedAt };
-  Object.assign(room, createRoom(room.capacity, room.winnerSitsOut, room.ownerId));
+  Object.assign(room, { ...createRoom(room.capacity, room.winnerSitsOut, room.ownerId), minPlayers: room.minPlayers ?? null, maxPlayers: room.maxPlayers ?? null, timersEnabled: room.timersEnabled !== false });
   room.members[id] = { name: kept.name, lastSeen: now, joinedAt: kept.joinedAt, seatId: null, entered: true, misses: 0 };
   assignSeats(room, now);
   touch(room);
@@ -86,13 +87,13 @@ export function enterCourt(room: Room, id: string, now: number) {
   member.entered = true;
   member.misses = 0;
   assignSeats(room, now);
-  if (room.phase === "dialogue" && seatedHumans(room, now) > 1 && room.deadline === null) {
+  if (room.timersEnabled !== false && room.phase === "dialogue" && seatedHumans(room, now) > 1 && room.deadline === null) {
     room.deadline = now + TURN_MS;
     touch(room);
   }
   if (room.phase !== "lobby") return;
   if (!room.seats.some(seat => seat.owner === id)) throw new LobbyError("The court is full.", 403);
-  beginTurn(room, now);
+  if (seatedHumans(room, now) >= (room.minPlayers ?? 1)) beginTurn(room, now);
 }
 export function leave(room: Room, id: string, now: number) {
   const seat = room.seats.find(s => s.owner === id);
@@ -118,7 +119,7 @@ function beginTurn(room: Room, now: number) {
   room.phase = "dialogue"; room.speaker = 0; room.turnStartedAt = now;
   room.submissions = {}; room.evaluation = null;
   assignSeats(room, now);
-  room.deadline = solo(room, now) ? null : now + TURN_MS;
+  room.deadline = room.timersEnabled === false || solo(room, now) ? null : now + TURN_MS;
   touch(room);
 }
 function completeTurn(room: Room, now: number) {
@@ -129,7 +130,7 @@ function completeTurn(room: Room, now: number) {
   }
   room.history.push(structuredClone(room.submissions));
   retireQuietHumans(room);
-  room.phase = "feedback"; room.deadline = now + FEEDBACK_MS; touch(room);
+  room.phase = "feedback"; room.deadline = room.timersEnabled === false ? null : now + FEEDBACK_MS; touch(room);
 }
 // Two silent rounds in a row return the seat to its NPC for the rest of the reign.
 function retireQuietHumans(room: Room) {
@@ -151,7 +152,7 @@ function retireQuietHumans(room: Room) {
 function reveal(room: Room, now: number) {
   const best = [...room.seats].sort((a, b) => b.total - a.total || room.submissions[b.id].score - room.submissions[a.id].score)[0];
   room.winner = { seatId: best.id, name: best.name, memberId: best.owner, total: best.total };
-  room.phase = "reveal"; room.deadline = now + REVEAL_MS; touch(room);
+  room.phase = "reveal"; room.deadline = room.timersEnabled === false ? null : now + REVEAL_MS; touch(room);
 }
 export function nextPrincess(room: Room, preferences: Preferences, now: number) {
   if (room.phase !== "creating" || !room.winner || !validPreferences(preferences)) throw new LobbyError("The new princess cannot be created yet.", 409);
@@ -196,7 +197,7 @@ export function advance(room: Room, now: number) {
   // Expired identities are bounded; active creators/winners retain their identity.
   for (const [id, member] of Object.entries(room.members)) if (now - member.lastSeen > 86_400_000 && id !== room.creator.memberId && id !== room.winner?.memberId) delete room.members[id];
   assignSeats(room, now);
-  if (room.phase === "lobby") return;
+  if (room.phase === "lobby" || (room.timersEnabled === false && room.phase !== "evaluating")) return;
   const advisorHere = room.advisorId && room.members[room.advisorId] && now - room.members[room.advisorId].lastSeen <= PRESENCE_MS;
   const playing = seatedHumans(room, now) > 0 || winnerHere(room, now) || advisorHere;
   if (!playing) {
@@ -227,6 +228,22 @@ export function advance(room: Room, now: number) {
   } else if (room.phase === "reveal" && now >= room.deadline!) {
     room.phase = "creating"; room.deadline = now + (room.winner?.memberId ? CREATE_MS : NPC_CREATE_MS); touch(room);
   } else if (room.phase === "creating" && now >= room.deadline!) defaultNextPrincess(room, now);
+}
+export function setTimers(room: Room, enabled: boolean, now: number) {
+  room.timersEnabled = enabled;
+  if (room.phase !== "evaluating") {
+    room.deadline = !enabled || ["lobby", "results"].includes(room.phase) || (room.phase === "dialogue" && solo(room, now)) ? null : now + phaseSpan(room);
+    room.pausedAt = null;
+  }
+}
+export function continueUntimed(room: Room, now: number) {
+  if (room.timersEnabled !== false) return;
+  if (room.phase === "feedback") {
+    if (room.turn >= TURN_COUNT - 1) reveal(room, now);
+    else { room.turn++; beginTurn(room, now); }
+  } else if (room.phase === "reveal") {
+    room.phase = "creating"; room.deadline = null; touch(room);
+  } else if (room.phase === "creating" && !room.winner?.memberId) defaultNextPrincess(room, now);
 }
 export function nextSpeaker(room: Room, id: string, now: number) {
   if (!room.members[id] || now - room.members[id].lastSeen > PRESENCE_MS) throw new LobbyError("Join the court first.", 401);
@@ -299,6 +316,7 @@ export function view(room: Room, id: string | null, now: number): RoomView {
   const waiting = ["dialogue", "evaluating"].includes(room.phase);
   const dialogue = own && own.by === id ? { text: own.text, reply: waiting ? "" : own.reply, feedback: waiting ? "" : own.feedback, pending: own.pending, mode: own.mode, timedOut: own.timedOut } : null;
   return {
+    minPlayers: room.minPlayers ?? null, maxPlayers: room.maxPlayers ?? null, timersEnabled: room.timersEnabled !== false,
     capacity: room.capacity ?? 5, winnerSitsOut: !!room.winnerSitsOut, canConfigure: !!id && room.ownerId === id,
     id: room.id, revision: room.revision, reign: room.reign, turn: room.turn, phase: room.phase, deadline: ["dialogue", "feedback"].includes(room.phase) ? room.deadline : null, serverNow: now, turnKey: turnKey(room),
     speakerId: room.phase === "results" ? room.seats[room.speaker]?.id ?? null : null,

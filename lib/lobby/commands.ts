@@ -1,4 +1,4 @@
-import { advance, ensureJoined, enterCourt, heartbeat, LobbyError, nextPrincess, nextSpeaker, resetCourt, submit, turnKey, view } from "./engine";
+import { continueUntimed, setTimers, advance, ensureJoined, enterCourt, heartbeat, LobbyError, nextPrincess, nextSpeaker, resetCourt, submit, turnKey, view } from "./engine";
 import { claimRound, finishRound, type Evaluation, type RoundJob } from "./round";
 import { preferenceEdits } from "./preferenceEdits";
 import { PREFERENCE_LIMIT, PREFERENCE_EDIT_LIMIT } from "./settings";
@@ -6,6 +6,7 @@ import type { Preferences, Room, RoomView } from "./types";
 
 export type Command = {
   action: "configure" | "sync" | "say" | "next" | "reset" | "enter" | "create" | "finishRound" | "finishCreation";
+  phase?: string; minPlayers?: number | null; maxPlayers?: number | null; timersEnabled?: boolean;
   lobbyId?: string; capacity?: number; winnerSitsOut?: boolean;
   id: string; key?: string; text?: string; live?: boolean; speakerId?: string;
   evaluations?: Evaluation[]; preferences?: Preferences | null;
@@ -34,12 +35,15 @@ export function execute(room: Room, command: Command, now: number): CommandResul
     if (!room.members[id]) throw new LobbyError("The court is reconnecting...", 401);
     if (action === "configure") {
       if (room.ownerId !== id) throw new LobbyError("Only the lobby creator can change these settings.", 403);
-      if (command.capacity !== undefined) {
-        if (!Number.isInteger(command.capacity) || command.capacity < 2 || command.capacity > 15) throw new LobbyError("Choose 2–15 players.");
-        if (room.phase !== "lobby" && command.capacity !== room.capacity) throw new LobbyError("Change the player limit before the contest starts.");
-        if (room.seats.filter(s => s.owner).length > command.capacity) throw new LobbyError("The player limit cannot be below the number seated.");
-        room.capacity = command.capacity;
-      }
+      const capacity = command.maxPlayers !== undefined ? command.maxPlayers ?? 15 : command.capacity ?? room.capacity ?? 5;
+      const minimum = command.minPlayers !== undefined ? command.minPlayers : room.minPlayers ?? null;
+      if (!Number.isInteger(capacity) || capacity < 2 || capacity > 15 || (minimum !== null && (!Number.isInteger(minimum) || minimum < 1 || minimum > capacity))) throw new LobbyError("Choose a minimum of 1–15 and a maximum of 2–15, with minimum no greater than maximum.");
+      if (room.phase !== "lobby" && (capacity !== room.capacity || minimum !== (room.minPlayers ?? null))) throw new LobbyError("Reset the contest to change the player limit.");
+      if (room.seats.filter(s => s.owner).length > capacity) throw new LobbyError("The player limit cannot be below the number seated.");
+      room.capacity = capacity;
+      if (command.minPlayers !== undefined) room.minPlayers = command.minPlayers;
+      if (command.maxPlayers !== undefined) room.maxPlayers = command.maxPlayers;
+      if (command.timersEnabled !== undefined && command.timersEnabled !== (room.timersEnabled !== false)) setTimers(room, command.timersEnabled, now);
       if (command.winnerSitsOut !== undefined) room.winnerSitsOut = command.winnerSitsOut;
       room.revision++;
     }
@@ -47,10 +51,11 @@ export function execute(room: Room, command: Command, now: number): CommandResul
     if (action === "enter") enterCourt(room, id, now);
     // Ignore duplicate or stale clicks from another tab viewing the same result.
     if (action === "next" && room.phase === "results" && command.key === turnKey(room) && command.speakerId === room.seats[room.speaker]?.id) nextSpeaker(room, id, now);
+    if (action === "next" && room.timersEnabled === false && command.key === turnKey(room) && command.phase === room.phase) continueUntimed(room, now);
     if (action === "say") submit(room, id, command.key, command.text, now);
     if (action === "finishRound") finishRound(room, command.key!, id, command.evaluations, now);
     if (action === "create") {
-      if (room.phase !== "creating" || room.winner?.memberId !== id || command.key !== turnKey(room) || now >= room.deadline!) throw new LobbyError("Only the winner can create this princess before the timer ends.", 403);
+      if (room.phase !== "creating" || room.winner?.memberId !== id || command.key !== turnKey(room) || (room.deadline !== null && now >= room.deadline)) throw new LobbyError("Only the winner can create this princess before the timer ends.", 403);
       if (room.creationPending) throw new LobbyError("Your princess is already being created.", 409);
       if (!command.text?.trim() || command.text.length > PREFERENCE_LIMIT) throw new LobbyError(`Use 1–${PREFERENCE_LIMIT} characters.`);
       const edits = preferenceEdits(room.preferences.prompt, command.text);

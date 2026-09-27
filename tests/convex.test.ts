@@ -322,3 +322,23 @@ test("creating an invite URL preserves the host cookie and accepts distinct brow
   expect((await GET(new NextRequest(`${url}?lobby=bad!`))).status).toBe(400);
   expect((await POST(new NextRequest(url, { method: "POST", body: JSON.stringify({ action: "newLobby", capacity: 16 }) }))).status).toBe(400);
 });
+
+test("optional player limits and timers persist independently per lobby", async () => {
+  let state = (await send({ action: "sync", id: "host", lobbyId: "optional-court", minPlayers: 2, maxPlayers: 3, timersEnabled: false })).state;
+  expect(state).toMatchObject({ capacity: 3, minPlayers: 2, maxPlayers: 3, timersEnabled: false });
+  state = (await send({ action: "enter", id: "host", lobbyId: "optional-court" })).state;
+  expect(state.phase).toBe("lobby");
+  await send({ action: "sync", id: "guest", lobbyId: "optional-court" });
+  state = (await send({ action: "enter", id: "guest", lobbyId: "optional-court" })).state;
+  expect(state.phase).toBe("dialogue");
+  expect(state.deadline).toBeNull();
+  state = (await send({ action: "configure", id: "host", lobbyId: "optional-court", timersEnabled: true })).state;
+  expect(state.deadline).toBeGreaterThan(now);
+  state = (await send({ action: "configure", id: "host", lobbyId: "optional-court", timersEnabled: false })).state;
+  expect(state.deadline).toBeNull();
+  state = (await send({ action: "reset", id: "host", lobbyId: "optional-court" })).state;
+  expect(state).toMatchObject({ capacity: 3, minPlayers: 2, maxPlayers: 3, timersEnabled: false });
+  state = (await send({ action: "configure", id: "host", lobbyId: "optional-court", minPlayers: null, maxPlayers: null })).state;
+  expect(state).toMatchObject({ capacity: 15, minPlayers: null, maxPlayers: null });
+  expect((await send({ action: "configure", id: "host", lobbyId: "optional-court", minPlayers: 10, maxPlayers: 3 })).error).toBeDefined();
+});

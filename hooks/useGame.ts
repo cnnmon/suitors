@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { LobbyOptions } from "@/lib/lobby/options";
 import { POLL_MS } from "@/lib/lobby/settings";
 import type { RoomView } from "@/lib/lobby/types";
 
@@ -45,13 +46,13 @@ export function useGame(lobbyId?: string) {
     return () => { controller.abort(); clearTimeout(timer); clearInterval(clock); };
   }, [receive, endpoint]);
 
-  const act = useCallback(async (action: "say" | "create" | "next" | "reset" | "enter" | "configure", text = "", settings?: { capacity: number; winnerSitsOut: boolean }) => {
+  const act = useCallback(async (action: "say" | "create" | "next" | "reset" | "enter" | "configure", text = "", settings?: LobbyOptions) => {
     if (sending.current) return false;
     sending.current = true; setBusy(true); setError("");
     try {
       const response = await fetch(endpoint, {
         method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(12_000),
-        body: JSON.stringify({ action, text, ...settings, turnKey: state?.turnKey, ...(action === "next" ? { speakerId: state?.speakerId } : {}) }),
+        body: JSON.stringify({ action, text, ...settings, turnKey: state?.turnKey, ...(action === "next" ? { speakerId: state?.speakerId, phase: state?.phase } : {}) }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Try again in a moment.");
@@ -60,7 +61,7 @@ export function useGame(lobbyId?: string) {
       setError(error instanceof Error ? error.message : "The court is reconnecting...");
       return false;
     } finally { sending.current = false; setBusy(false); }
-  }, [receive, endpoint, state?.turnKey, state?.speakerId]);
+  }, [receive, endpoint, state?.turnKey, state?.speakerId, state?.phase]);
 
   const clock = state ? (now ? now + clockOffset.current : state.serverNow) : 0;
   const remaining = state?.deadline ? Math.max(0, Math.ceil((state.deadline - clock) / 1000)) : null;
@@ -71,7 +72,7 @@ export function useGame(lobbyId?: string) {
     next: () => act("next"),
     reset: () => act("reset"),
     enter: () => act("enter"),
-    configure: (settings: { capacity: number; winnerSitsOut: boolean }) => act("configure", "", settings),
+    configure: (settings: LobbyOptions) => act("configure", "", settings),
   };
 }
 export type GameController = ReturnType<typeof useGame>;

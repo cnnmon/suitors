@@ -187,7 +187,7 @@ function HowToPlay({
           </button>
           {onCreateLobby && (
             <button className="text-sm" onClick={onCreateLobby}>
-              Create a lobby for friends
+              Create a private lobby
             </button>
           )}
         </div>
@@ -251,10 +251,7 @@ export function Game({ lobbyId }: { lobbyId?: string }) {
               {state.capacity} players
             </span>
           )}
-          <div className="flex gap-3 bg-paper px-1 text-xs">
-            <button onClick={() => setSettingsMode("create")}>
-              Create lobby
-            </button>
+          <div className="flex gap-3 bg-paper px-1 text-sm">
             {lobbyId && (
               <button onClick={() => void copyInvite()}>
                 {copied ? "Link copied!" : "Copy invite link"}
@@ -345,21 +342,26 @@ export function Game({ lobbyId }: { lobbyId?: string }) {
       </div>
       <footer className="absolute p-4 bottom-0 right-0">
         {state && (
-          <span className="flex shrink-0 gap-3">
+          <span className="flex gap-2 flex-col text-right">
             <button
               className="bg-paper"
-              disabled={game.busy}
-              onClick={() => void game.reset()}
+              onClick={() =>
+                setSettingsMode((mode) => (mode === "create" ? null : "create"))
+              }
             >
-              reset
+              {"> "}
+              {settingsMode === "create"
+                ? "exit private court"
+                : "make private court"}
             </button>
+
             <button className="bg-paper" onClick={() => setLineages(true)}>
-              past lineages
+              {"> "}see past lineages
             </button>
           </span>
         )}
       </footer>
-      {(state.phase === "lobby" || intro) && (
+      {((state.phase === "lobby" && !state.you?.seatId) || intro) && (
         <HowToPlay
           required={state.phase === "lobby"}
           winnerSitsOut={state.winnerSitsOut}
