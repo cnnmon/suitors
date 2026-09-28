@@ -295,11 +295,14 @@ export function setTimers(room: Room, enabled: boolean, now: number) {
   }
 }
 export function continueUntimed(room: Room, now: number) {
-  if (room.timersEnabled !== false) return;
+  // Feedback can be forced while timers are on, once "Continuing…" has stalled.
   if (room.phase === "feedback") {
     if (room.turn >= TURN_COUNT - 1) reveal(room, now);
     else { room.turn++; beginTurn(room, now); }
-  } else if (room.phase === "reveal") {
+    return;
+  }
+  if (room.timersEnabled !== false) return;
+  if (room.phase === "reveal") {
     room.phase = "creating"; room.deadline = null; touch(room);
   } else if (room.phase === "creating" && !room.winner?.memberId) defaultNextPrincess(room, now);
 }

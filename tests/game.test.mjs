@@ -621,6 +621,23 @@ test('sit-out setting applies at succession and lasts exactly one contest', () =
   assert.equal(view(room, 'person-1', room.turnStartedAt).you.role, 'suitor');
 });
 
+test('overdue feedback starts the next round instead of staying on Continuing', () => {
+  const room = start(2);
+  pass(room);
+  assert.equal(room.phase, 'feedback');
+  const late = room.deadline + 60_000;
+  heartbeat(room, 'person-0', late);
+  heartbeat(room, 'person-1', late);
+  advance(room, late);
+  assert.equal(room.phase, 'dialogue');
+  assert.equal(room.turn, 1);
+  const again = start(2);
+  pass(again);
+  execute(again, { action: 'next', id: 'person-0', key: turnKey(again), phase: 'feedback' }, again.deadline - 1);
+  assert.equal(again.phase, 'dialogue');
+  assert.equal(again.turn, 1);
+});
+
 test('timers off allows untimed answers and manual progression through a whole reign', () => {
   const room = start(2); room.ownerId = 'person-0';
   room.preferences = preferences('Likes confidence.');

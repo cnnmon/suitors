@@ -68,6 +68,14 @@ export function useGame(lobbyId?: string) {
 
   const clock = state ? (now ? now + clockOffset.current : state.serverNow) : 0;
   const remaining = state?.deadline ? Math.max(0, Math.ceil((state.deadline - clock) / 1000)) : null;
+  const actRef = useRef(act);
+  actRef.current = act;
+  const continuing = state?.phase === "feedback" && remaining === 0;
+  useEffect(() => {
+    if (!continuing) return;
+    const timer = setInterval(() => { void actRef.current("next"); }, 2_000);
+    return () => clearInterval(timer);
+  }, [continuing, state?.turnKey]);
   return {
     state, error, busy, connected, remaining, clock,
     say: (text: string) => act("say", text),

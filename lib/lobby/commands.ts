@@ -54,7 +54,7 @@ export function execute(room: Room, command: Command, now: number): CommandResul
     if (action === "rename") setName(room, id, command.text, now);
     // Ignore duplicate or stale clicks from another tab viewing the same result.
     if (action === "next" && room.phase === "results" && command.key === turnKey(room) && command.speakerId === room.seats[room.speaker]?.id) nextSpeaker(room, id, now);
-    if (action === "next" && room.timersEnabled === false && command.key === turnKey(room) && command.phase === room.phase) continueUntimed(room, now);
+    if (action === "next" && command.key === turnKey(room) && command.phase === room.phase && (room.phase === "feedback" || room.timersEnabled === false)) continueUntimed(room, now);
     if (action === "say") submit(room, id, command.key, command.text, now);
     if (action === "finishRound") finishRound(room, command.key!, id, command.evaluations, now);
     if (action === "create") {
