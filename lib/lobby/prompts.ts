@@ -1,10 +1,9 @@
 import { TURN_COUNT } from "./settings";
 
-// Built-in questions rotate automatically; no generation or player setup needed.
-// Each group of three moves from playful to revealing. Edit the five NPC answers
-// alongside each question; they should sound like people, not scoring keywords.
+// One deck of built-in questions, shuffled once. Reigns deal from that deck, so
+// every prompt is used before any repeats. Edit the five NPC answers alongside
+// each question; they should sound like people, not scoring keywords.
 const QUESTIONS = [
-  // Reign 1: make an impression, handle a little friction, take a personal gamble.
   {
     question: "My pet monster hates you. Win it over.",
     answers: [
@@ -16,7 +15,7 @@ const QUESTIONS = [
     ],
   },
   {
-    question: "My portrait is prettier than me. Say something.",
+    question: "They painted my portrait to be prettier than me. Say something.",
     answers: [
       "It also looks much easier to argue with.",
       "It hasn't looked at me the way you just did.",
@@ -26,16 +25,15 @@ const QUESTIONS = [
     ],
   },
   {
-    question: "We're getting married in five minutes. Tell me something I should know.",
+    question: "We're getting married in five minutes. Tell me a horrible secret I should know.",
     answers: [
-      "I invited my mother. She thinks this is a job interview.",
-      "When I'm hurt, I get quiet. Please ask twice.",
-      "I won't agree with you just because you're wearing a crown.",
-      "My vows are written on my hand. I've been sweating.",
-      "I'd still like to ask whether you want this.",
+      "I sold tickets. Your aunt paid for the good seats.",
+      "I read your diary to plan our first date. You thought we had so much in common.",
+      "I applied to marry your sister first. She suggested you.",
+      "My touching proposal speech was mostly from my last wedding.",
+      "I told everyone you proposed to me. I liked how impressed they looked.",
     ],
   },
-  // Reign 2: an awkward date becomes a question about the future.
   {
     question: "I turned you into a frog. Are we still on for dinner?",
     answers: [
@@ -47,13 +45,13 @@ const QUESTIONS = [
     ],
   },
   {
-    question: "The royal oracle says we're a terrible match. What did it miss?",
+    question: "The royal oracle says we're a terrible match. What do you think?",
     answers: [
-      "My excellent soup. Prophecy is hungry work.",
-      "How easy it is to sit quietly with you.",
-      "That neither of us enjoys being told what to do.",
-      "Its appointment with the royal optician.",
-      "Maybe nothing. I'd still like one dinner to find out.",
+      "It also predicted sunshine. We're standing in a puddle.",
+      "I like who I am around you. I'd rather start there.",
+      "We're probably difficult people. That isn't the same as a terrible match.",
+      "Did it suggest anyone else? Particularly anyone employed as an oracle?",
+      "What part sounded true to you? You've been quiet since we left.",
     ],
   },
   {
@@ -66,7 +64,6 @@ const QUESTIONS = [
       "Would you do it again?",
     ],
   },
-  // Reign 3: play along, stand your ground, then choose a comforting lie.
   {
     question: "I'm tired of being human today. What should I become?",
     answers: [
@@ -97,7 +94,6 @@ const QUESTIONS = [
       "I came here with no idea who you were.",
     ],
   },
-  // Reign 4: invent an us, risk losing it, then let her see inside your head.
   {
     question: "Invent a rumor about us.",
     answers: [
@@ -128,17 +124,6 @@ const QUESTIONS = [
       "You could have asked me to tell you.",
     ],
   },
-  // Reign 5: find her, negotiate her enthusiasm, decide what you'd bring to her life.
-  {
-    question: "I'm hiding under the banquet table. What do you say when you find me?",
-    answers: [
-      "Good news. The cake is within grabbing distance.",
-      "Would you like company or a better hiding place?",
-      "Move over. I'm hiding from the same people.",
-      "Your Majesty, the table requests a dance.",
-      "I'll tell them I couldn't find you.",
-    ],
-  },
   {
     question: "I bought us matching coffins. Did I move too fast?",
     answers: [
@@ -159,8 +144,101 @@ const QUESTIONS = [
       "Nothing yet. Show me what you used to keep there.",
     ],
   },
+  {
+    question: "You have my attention. Now what?",
+    answers: [
+      "I hadn't planned this far. You looked busy.",
+      "Come for a walk. I'm better without an audience.",
+      "Now you try to get mine.",
+      "I was hoping to borrow money, but this feels promising.",
+      "I'd like to take you out. Somewhere you haven't already judged everyone.",
+    ],
+  },
+  {
+    question: "You practiced that compliment. Let me hear the first draft.",
+    answers: [
+      "You have very symmetrical authority.",
+      "I like your face. It got complicated when I tried to explain why.",
+      "The first one was better, but less appropriate for court.",
+      "Your eyes are like stars. My sister confiscated it.",
+      "I wanted you to notice I'd noticed something besides your looks.",
+    ],
+  },
+  {
+    question: "I'm wearing something hideous you helped me choose. Defend yourself.",
+    answers: [
+      "I wanted to be the attractive one for an evening.",
+      "You looked so pleased. I lost my nerve.",
+      "I still like it. We're allowed to be wrong together.",
+      "I thought we were punishing the guests.",
+      "I was watching you try things on. I wasn't paying attention to the clothes.",
+    ],
+  },
+  {
+    question: "What's the easiest way for me to make you blush?",
+    answers: [
+      "Compliment me in front of someone who knows me.",
+      "Remember a tiny thing I told you weeks ago.",
+      "Tell me exactly what you want. I'm less composed than I look.",
+      "Wave at me. I'll wave back at the person behind you.",
+      "Take my hand first. I always end up being the one who asks.",
+    ],
+  },
+  {
+    question: "My mother asks what you see in me. I'm sitting right here.",
+    answers: [
+      "I'd prepared an answer for your father. How similar are your interests?",
+      "She makes ordinary things feel worth telling someone about.",
+      "You raised her. Surely you know she's attractive.",
+      "A future full of being asked difficult questions over soup.",
+      "She looks at me as though she expects an honest answer. I like that.",
+    ],
+  },
+  {
+    question: "Name one thing you hope we never do as a couple.",
+    answers: [
+      "Call each other baby in front of a waiter.",
+      "Stop dressing up because we already know we like each other.",
+      "Share every hobby. I want something to tell you when I get home.",
+      "Become the people who bring a lute to dinner.",
+      "Pretend we don't want something because the other person might say no.",
+    ],
+  },
+  {
+    question: "Your mother likes your ex more than me. What's your next move?",
+    answers: [
+      "She can date them, then.",
+      "I'm bringing you anyway. She'll have to get to know you.",
+      "I'll tell her she doesn't get a vote. Neither does yours.",
+      "You like my mother? This is already going better than last time.",
+      "Stop asking her for relationship advice. It's how she got this confident.",
+    ],
+  },
+  {
+    question: "We've been on a few dates and you still call me 'Your Majesty.' What are we?",
+    answers: [
+      "Moving slowly. I only recently stopped bowing.",
+      "I was hoping we were together. I'm bad at this conversation.",
+      "I'd like to be yours. Would you like to be mine?",
+      "Flirting. I thought you liked the formality.",
+      "A few dates in. I like you, but I'm not choosing wedding china yet.",
+    ],
+  },
 ];
 
+function shuffled<T>(items: readonly T[], seed: number) {
+  const order = items.map((_, index) => index);
+  let state = seed >>> 0;
+  for (let index = order.length - 1; index > 0; index--) {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    const swap = state % (index + 1);
+    [order[index], order[swap]] = [order[swap], order[index]];
+  }
+  return order.map(index => items[index]);
+}
+
+const DECK = shuffled(QUESTIONS, 0x5e1d);
+
 export function questionFor(reign: number, turn: number) {
-  return QUESTIONS[((reign - 1) * TURN_COUNT + turn) % QUESTIONS.length];
+  return DECK[((reign - 1) * TURN_COUNT + turn) % DECK.length];
 }
