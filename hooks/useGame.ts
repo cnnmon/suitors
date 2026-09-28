@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LobbyOptions } from "@/lib/lobby/options";
-import { POLL_MS } from "@/lib/lobby/settings";
+import { watchCourt } from "@/lib/lobby/realtime";
 import type { RoomView } from "@/lib/lobby/types";
 
 // The only browser game-state hook. The server owns phases, seats, and deadlines.
@@ -16,40 +16,29 @@ export function useGame(lobbyId?: string) {
   const clockOffset = useRef(0);
   const sending = useRef(false);
 
+  const courtId = useRef<string | null>(null);
   const receive = useCallback((next: RoomView) => {
+    // A new court id means an admin reset. Reload so this browser rejoins the fresh round.
+    if (courtId.current && courtId.current !== next.id) {
+      window.location.reload();
+      return;
+    }
+    courtId.current = next.id;
     clockOffset.current = next.serverNow - Date.now();
     setState(previous => previous && (previous.serverNow > next.serverNow || (previous.id === next.id && previous.revision > next.revision)) ? previous : next);
     setConnected(true);
   }, []);
 
   useEffect(() => {
-    const controller = new AbortController();
-    let closed = false;
-    let timer: ReturnType<typeof setTimeout>;
-    async function poll() {
-      try {
-        const response = await fetch(endpoint, { cache: "no-store", signal: controller.signal });
-        if (!response.ok) {
-          const body = await response.json().catch(() => null) as { error?: string } | null;
-          throw new Error(body?.error || `The court could not be reached (${response.status}).`);
-        }
-        const next: RoomView = await response.json();
-        if (!controller.signal.aborted) { receive(next); closed = next.closedAt != null; }
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          setConnected(false);
-          setError(error instanceof Error ? error.message : "The court could not be reached.");
-        }
-      } finally {
-        if (!controller.signal.aborted && !closed) timer = setTimeout(poll, POLL_MS);
-      }
-    }
-    void poll();
+    const stop = watchCourt(endpoint, receive, message => {
+      setConnected(false);
+      setError(message);
+    });
     const clock = setInterval(() => setNow(Date.now()), 250);
-    return () => { controller.abort(); clearTimeout(timer); clearInterval(clock); };
+    return () => { stop(); clearInterval(clock); };
   }, [receive, endpoint]);
 
-  const act = useCallback(async (action: "start" | "say" | "create" | "next" | "reset" | "enter" | "rename" | "configure", text = "", settings?: LobbyOptions) => {
+  const act = useCallback(async (action: "start" | "say" | "create" | "next" | "reset" | "enter" | "rename" | "configure" | "leave", text = "", settings?: LobbyOptions) => {
     if (sending.current) return false;
     sending.current = true; setBusy(true); setError("");
     try {
@@ -68,14 +57,6 @@ export function useGame(lobbyId?: string) {
 
   const clock = state ? (now ? now + clockOffset.current : state.serverNow) : 0;
   const remaining = state?.deadline ? Math.max(0, Math.ceil((state.deadline - clock) / 1000)) : null;
-  const actRef = useRef(act);
-  actRef.current = act;
-  const continuing = state?.phase === "feedback" && remaining === 0;
-  useEffect(() => {
-    if (!continuing) return;
-    const timer = setInterval(() => { void actRef.current("next"); }, 2_000);
-    return () => clearInterval(timer);
-  }, [continuing, state?.turnKey]);
   return {
     state, error, busy, connected, remaining, clock,
     say: (text: string) => act("say", text),
@@ -86,6 +67,7 @@ export function useGame(lobbyId?: string) {
     rename: (name: string) => act("rename", name),
     start: () => act("start"),
     configure: (settings: LobbyOptions) => act("configure", "", settings),
+    leave: () => act("leave"),
   };
 }
 export type GameController = ReturnType<typeof useGame>;

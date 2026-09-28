@@ -9,10 +9,8 @@ import {
   PREFERENCE_EDIT_LIMIT,
   CREATE_MS,
   TURN_COUNT,
-  NPC_COUNT,
 } from "@/lib/lobby/settings";
 
-// One panel, one input. No local game phases or duplicated game state.
 export function Conversation({ game }: { game: GameController }) {
   const { state, busy, connected, remaining, error } = game;
   const [draft, setDraft] = useState(() =>
@@ -22,17 +20,19 @@ export function Conversation({ game }: { game: GameController }) {
   const me = state.you;
   const dialogue = me?.dialogue;
   const creating = state.canCreate;
-  const waitingNames = state.seats.filter(s => s.kind === "human" && !s.submitted).map(s => s.name).join(", ");
   const speaker = state.seats.find((seat) => seat.id === state.speakerId);
   const canSpeak =
     me?.role === "suitor" &&
     state.phase === "dialogue" &&
     !me.submitted &&
     remaining !== 0;
-  const manualAdvance = !!me && !state.timersEnabled && (
-    ["feedback", "reveal"].includes(state.phase) ||
-    (state.phase === "creating" && state.seats.find(s => s.id === state.winner?.seatId)?.kind === "npc")
-  );
+  const manualAdvance =
+    !!me &&
+    !state.timersEnabled &&
+    (["feedback", "reveal"].includes(state.phase) ||
+      (state.phase === "creating" &&
+        state.seats.find((s) => s.id === state.winner?.seatId)?.kind ===
+          "npc"));
   const canAdvance =
     !!me &&
     state.phase === "results" &&
@@ -82,18 +82,32 @@ export function Conversation({ game }: { game: GameController }) {
   }
   return (
     <section
-      className="flex shrink-0 flex-col gap-2 border-2 border-ink bg-paper p-3 shadow-[3px_3px_0_#0b4b28]"
+      className="flex shrink-0 flex-col gap-2 border-2 border-ink bg-paper p-3 shadow-[3px_3px_0_#0b4b28"
       aria-label="Conversation"
     >
       {["lobby", "dialogue", "evaluating", "results", "feedback"].includes(
         state.phase,
       ) && (
         <p className="m-0 font-bold" aria-live="polite">
-          The princess asks: “{state.prompt}”
+          The princess{" "}
+          {state.phase === "results" || state.phase === "feedback"
+            ? "asked"
+            : "asks"}
+          : “{state.prompt}”
         </p>
       )}
       {state.phase === "lobby" && state.privateLobby && state.canConfigure && (
-        <button className="w-fit border-2 border-ink bg-ink px-4 py-2 text-paper" disabled={busy || !connected || !me?.seatId || state.seats.filter(s => s.kind === "human").length < (state.minPlayers ?? 1)} onClick={() => void game.start()}>
+        <button
+          className="w-fit border-2 border-ink bg-ink px-4 py-2 text-paper"
+          disabled={
+            busy ||
+            !connected ||
+            !me?.seatId ||
+            state.seats.filter((s) => s.kind === "human").length <
+              (state.minPlayers ?? 1)
+          }
+          onClick={() => void game.start()}
+        >
           Start contest →
         </button>
       )}
@@ -117,7 +131,8 @@ export function Conversation({ game }: { game: GameController }) {
       )}
       {state.phase === "feedback" && dialogue && (
         <p>
-          {dialogue.feedback}{" "}
+          The princess thought:{" "}
+          {dialogue.feedback.toLowerCase().replace("very", "")}{" "}
           <strong className="ml-2">
             +{state.seats.find((s) => s.id === me?.seatId)?.lastScore ?? 0} pts
           </strong>
@@ -170,8 +185,13 @@ export function Conversation({ game }: { game: GameController }) {
                 : "Send →"}
           </button>
         </form>
-      ) : me?.role === "spectator" && state.seats.filter(s => s.kind === "human").length < state.capacity && (state.seats.filter(s => s.kind === "npc").length > NPC_COUNT || ["lobby", "dialogue"].includes(state.phase)) ? (
-        <button className="mt-1 w-fit border-2 border-ink bg-ink px-4 py-2 text-paper" type="button" disabled={busy || !connected} onClick={() => void game.enter()}>
+      ) : me?.role === "spectator" && !me.entered ? (
+        <button
+          className="mt-1 w-fit border-2 border-ink bg-ink px-4 py-2 text-paper"
+          type="button"
+          disabled={busy || !connected}
+          onClick={() => void game.enter()}
+        >
           {busy ? "…" : "Join the court →"}
         </button>
       ) : canAdvance || manualAdvance ? (
@@ -181,15 +201,27 @@ export function Conversation({ game }: { game: GameController }) {
           disabled={busy || !connected}
           onClick={() => void game.next()}
         >
-          {busy ? "…" : state.phase === "feedback" ? state.turn === TURN_COUNT - 1 ? "Reveal winner →" : "Next question →" : state.phase === "reveal" ? "Continue →" : state.phase === "creating" ? "Meet the next princess →" : "Next →"}
+          {busy
+            ? "…"
+            : state.phase === "feedback"
+              ? state.turn === TURN_COUNT - 1
+                ? "Reveal winner →"
+                : "Next question →"
+              : state.phase === "reveal"
+                ? "Continue →"
+                : state.phase === "creating"
+                  ? "Meet the next princess →"
+                  : "Next →"}
         </button>
       ) : !["dialogue", "evaluating"].includes(state.phase) ||
         me?.role !== "suitor" ? (
-        <p className="opacity-80">
+        <p className="opacity-80 text-xs">
           {state.phase === "reveal"
             ? "Ties: last-turn score, then seat order. Winner edits the next princess’s preferences shortly."
             : state.phase === "creating"
-              ? state.timersEnabled ? `The court continues automatically if no prompt arrives in ${CREATE_MS / 1000}s.` : "Waiting for the winner to set the next princess’s preferences."
+              ? state.timersEnabled
+                ? `The court continues automatically if no prompt arrives in ${CREATE_MS / 1000}s.`
+                : "Waiting for the winner to set the next princess’s preferences."
               : state.phase === "feedback"
                 ? remaining === 0
                   ? "Continuing…"
@@ -197,10 +229,14 @@ export function Conversation({ game }: { game: GameController }) {
                 : me?.role === "advisor"
                   ? "You’re watching this contest. You’ll rejoin the next one."
                   : state.phase === "lobby"
-                  ? state.privateLobby ? (state.canConfigure ? `${state.seats.filter(s => s.kind === "human").length} seated · ${state.minPlayers ?? 1} needed. Start when you’re ready. Keep this lobby open; it closes 25 seconds after you disconnect.` : "Waiting for the admin to start the contest.") : "Enter to begin."
-                  : speaker
-                    ? `Waiting for ${speaker.name}.`
-                    : "Waiting for the rest of the court…"}
+                    ? state.privateLobby
+                      ? state.canConfigure
+                        ? `${state.seats.filter((s) => s.kind === "human").length} seated. Start when you’re ready. Keep this lobby open; it closes 25 seconds after you disconnect.`
+                        : "Waiting for the admin to start the contest."
+                      : "Enter to begin."
+                    : speaker
+                      ? `Waiting for ${speaker.name}.`
+                      : "Waiting for the rest of the court…"}
         </p>
       ) : null}
     </section>

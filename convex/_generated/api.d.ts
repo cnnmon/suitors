@@ -9,6 +9,7 @@
  */
 
 import type * as court from "../court.js";
+import type * as presence from "../presence.js";
 
 import type {
   ApiFromModules,
@@ -18,6 +19,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   court: typeof court;
+  presence: typeof presence;
 }>;
 
 /**

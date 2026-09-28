@@ -11,6 +11,7 @@
 !.yarn/versions
 /lib/moderation/*
 /lib/lobby/blocked-keywords.ts
+/app/api/admin/*
 
 # testing
 /coverage

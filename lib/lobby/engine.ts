@@ -30,7 +30,7 @@ function npcCount(room: Room) {
   return room.seats.filter(seat => !seat.owner).length;
 }
 function addSeat(room: Room): Seat {
-  const used = new Set(room.seats.map(seat => seat.id));
+  const used = new Set([...room.seats.map(seat => seat.id), ...room.history.flatMap(turn => Object.keys(turn))]);
   let index = 0;
   while (used.has(`seat-${index}`)) index++;
   const npcName = NPC_NAMES[index % NPC_NAMES.length];
@@ -43,7 +43,7 @@ function removeSeat(room: Room, index: number) {
   const removed = room.seats.splice(index, 1)[0];
   if (!removed) return;
   delete room.submissions[removed.id];
-  for (const turn of room.history) delete turn[removed.id];
+  // Completed answers remain in history after a human leaves the active roster.
   if (room.speaker >= room.seats.length) room.speaker = Math.max(0, room.seats.length - 1);
   touch(room);
 }
@@ -124,11 +124,21 @@ export function resetCourt(room: Room, id: string, now: number) {
   assignSeats(room, now);
   touch(room);
 }
+// People still at court keep their names and seats. A new court id tells open browsers to reload; entering starts turn one.
+export function adminReset(room: Room, now: number) {
+  const previousRevision = room.revision;
+  const present = Object.entries(room.members).filter(([, member]) => now - member.lastSeen <= PRESENCE_MS);
+  Object.assign(room, { ...createRoom(room.capacity, room.winnerSitsOut, room.ownerId), minPlayers: room.minPlayers ?? null, maxPlayers: room.maxPlayers ?? null, timersEnabled: room.timersEnabled !== false });
+  for (const [id, member] of present) room.members[id] = { name: member.name, lastSeen: now, joinedAt: member.joinedAt, seatId: null, entered: true, misses: 0 };
+  assignSeats(room, now);
+  room.revision = Math.max(room.revision, previousRevision + 1);
+}
 export function enterCourt(room: Room, id: string, now: number) {
   const member = room.members[id];
   if (!member || now - member.lastSeen > PRESENCE_MS) throw new LobbyError("Join the court first.", 401);
   member.entered = true;
   member.misses = 0;
+  member.seatId = room.seats.find(seat => seat.owner === id)?.id ?? null;
   assignSeats(room, now);
   if (room.timersEnabled !== false && room.phase === "dialogue" && seatedHumans(room, now) > 1 && room.deadline === null) {
     room.deadline = now + TURN_MS;
@@ -162,7 +172,7 @@ export function leave(room: Room, id: string, now: number) {
   delete room.members[id]; assignSeats(room, now); touch(room);
 }
 function seatedHumans(room: Room, now: number) {
-  return room.seats.filter(seat => seat.owner && room.members[seat.owner] && now - room.members[seat.owner].lastSeen <= PRESENCE_MS).length;
+  return room.seats.filter(seat => seat.owner && room.members[seat.owner]?.entered !== false && room.members[seat.owner] && now - room.members[seat.owner].lastSeen <= PRESENCE_MS).length;
 }
 const solo = (room: Room, now: number) => seatedHumans(room, now) <= 1;
 function phaseSpan(room: Room) {
@@ -178,6 +188,7 @@ function winnerHere(room: Room, now: number) {
 function beginTurn(room: Room, now: number) {
   room.phase = "dialogue"; room.speaker = 0; room.turnStartedAt = now;
   room.submissions = {}; room.evaluation = null;
+  releaseExpiredSeats(room, now);
   assignSeats(room, now);
   room.deadline = room.timersEnabled === false || solo(room, now) ? null : now + TURN_MS;
   touch(room);
@@ -192,7 +203,7 @@ function completeTurn(room: Room, now: number) {
   retireQuietHumans(room);
   room.phase = "feedback"; room.deadline = room.timersEnabled === false ? null : now + FEEDBACK_MS; touch(room);
 }
-// Two silent rounds in a row return the seat to its NPC for the rest of the reign.
+// Two silent rounds kick the player. Keep the scored roster until the next question.
 function retireQuietHumans(room: Room) {
   const latest = room.history.at(-1);
   if (!latest) return;
@@ -205,8 +216,7 @@ function retireQuietHumans(room: Room) {
     member.misses = spoke ? 0 : (member.misses ?? 0) + 1;
     if (member.misses < 2) continue;
     member.seatId = null;
-    seat.owner = null;
-    seat.name = seat.npcName;
+    member.entered = false;
   }
 }
 function reveal(room: Room, now: number) {
@@ -235,7 +245,7 @@ export function nextPrincess(room: Room, preferences: Preferences, now: number) 
   room.history = []; room.submissions = {}; room.creationPending = false; room.creationId = null;
   for (const seat of room.seats) seat.total = 0;
   for (const member of Object.values(room.members)) member.misses = 0;
-  assignSeats(room, now); beginTurn(room, now);
+  beginTurn(room, now);
 }
 export function defaultNextPrincess(room: Room, now: number) {
   // A timeout keeps the existing tastes. NPC changes obey the same edit budget.
@@ -247,19 +257,36 @@ export function defaultNextPrincess(room: Room, now: number) {
     : { ...structuredClone(room.preferences), source: "npc" };
   nextPrincess(room, preferences, now);
 }
-export function advance(room: Room, now: number) {
-  for (const seat of room.seats) {
-    if (["lobby", "dialogue"].includes(room.phase) && seat.owner && (!room.members[seat.owner] || now - room.members[seat.owner].lastSeen > PRESENCE_MS)) {
-      const member = room.members[seat.owner]; if (member) member.seatId = null;
-      seat.owner = null; seat.name = seat.npcName; touch(room);
+function releaseExpiredSeats(room: Room, now: number) {
+  for (let index = room.seats.length - 1; index >= 0; index--) {
+    const seat = room.seats[index];
+    if (!seat.owner) continue;
+    const member = room.members[seat.owner];
+    if (!member || member.entered === false || (member.misses ?? 0) >= 2 || now - member.lastSeen > PRESENCE_MS) {
+      if (member) { member.seatId = null; member.entered = false; }
+      removeSeat(room, index);
     }
   }
+}
+function finishFeedback(room: Room, now: number) {
+  if (room.turn >= TURN_COUNT - 1) reveal(room, now);
+  else { room.turn++; beginTurn(room, now); }
+}
+export function advance(room: Room, now: number) {
+  for (const member of Object.values(room.members)) {
+    if (member.entered !== false && now - member.lastSeen > PRESENCE_MS) {
+      member.entered = false; member.seatId = null; touch(room);
+    }
+  }
+  if (["lobby", "dialogue"].includes(room.phase)) releaseExpiredSeats(room, now);
   // Expired identities are bounded; active creators/winners retain their identity.
   for (const [id, member] of Object.entries(room.members)) if (now - member.lastSeen > 86_400_000 && id !== room.creator.memberId && id !== room.winner?.memberId) delete room.members[id];
   assignSeats(room, now);
   if (room.phase === "lobby" || (room.timersEnabled === false && room.phase !== "evaluating")) return;
   const advisorHere = room.advisorId && room.members[room.advisorId] && now - room.members[room.advisorId].lastSeen <= PRESENCE_MS;
-  const playing = seatedHumans(room, now) > 0 || winnerHere(room, now) || advisorHere;
+  // A newcomer waiting for the next question must be able to wake a paused court.
+  const waitingPlayer = Object.values(room.members).some(member => member.entered !== false && !member.seatId && (member.misses ?? 0) < 2 && now - member.lastSeen <= PRESENCE_MS);
+  const playing = seatedHumans(room, now) > 0 || winnerHere(room, now) || advisorHere || waitingPlayer;
   if (!playing) {
     if (room.pausedAt == null) { room.pausedAt = now; touch(room); }
     return;
@@ -281,8 +308,7 @@ export function advance(room: Room, now: number) {
       }
     }
   } else if (room.phase === "feedback" && now >= room.deadline!) {
-    if (room.turn >= TURN_COUNT - 1) reveal(room, now);
-    else { room.turn++; beginTurn(room, now); }
+    finishFeedback(room, now);
   } else if (room.phase === "reveal" && now >= room.deadline!) {
     room.phase = "creating"; room.deadline = now + (room.winner?.memberId ? CREATE_MS : NPC_CREATE_MS); touch(room);
   } else if (room.phase === "creating" && now >= room.deadline!) defaultNextPrincess(room, now);
@@ -295,14 +321,10 @@ export function setTimers(room: Room, enabled: boolean, now: number) {
   }
 }
 export function continueUntimed(room: Room, now: number) {
-  // Feedback can be forced while timers are on, once "Continuing…" has stalled.
-  if (room.phase === "feedback") {
-    if (room.turn >= TURN_COUNT - 1) reveal(room, now);
-    else { room.turn++; beginTurn(room, now); }
-    return;
-  }
   if (room.timersEnabled !== false) return;
-  if (room.phase === "reveal") {
+  if (room.phase === "feedback") {
+    finishFeedback(room, now);
+  } else if (room.phase === "reveal") {
     room.phase = "creating"; room.deadline = null; touch(room);
   } else if (room.phase === "creating" && !room.winner?.memberId) defaultNextPrincess(room, now);
 }
@@ -347,7 +369,7 @@ export function submit(room: Room, id: string, key: unknown, value: unknown, now
 const markOutOfTen = (score: number) => score > 0 ? Math.max(1, Math.min(10, Math.round(score / 10))) : null;
 // Later turns count more: turn 1 ×1, turn 2 ×2, and so on. Result is 0–100.
 function courtLog(room: Room) {
-  const lines: Array<{ name: string; event: string; note: string | null; reply: string | null }> = [];
+  const lines: Array<{ name: string; event: string | null; note: string | null; reply: string | null; said: string | null; turn: number | null }> = [];
   room.history.forEach((turn, index) => {
     for (const seat of room.seats) {
       const spoken = turn[seat.id];
@@ -356,13 +378,15 @@ function courtLog(room: Room) {
       const silent = spoken.timedOut || !spoken.text.trim();
       lines.push({
         name: seat.name,
-        event: silent ? `said nothing on turn ${index + 1}.` : `spoke on turn ${index + 1}. ${mark ?? 0}/10.`,
+        event: silent ? null : `${mark ?? 0}/10.`,
         note: silent ? null : spoken.feedback,
         reply: silent ? null : spoken.reply,
+        said: silent ? null : spoken.text,
+        turn: index + 1,
       });
     }
   });
-  if (room.winner) lines.push({ name: room.winner.name, event: "won the crown’s ear.", note: null, reply: null });
+  if (room.winner) lines.push({ name: room.winner.name, event: "won the crown’s ear.", note: null, reply: null, said: null, turn: null });
   return lines.slice(-10);
 }
 export function likedScore(scores: number[]) {
@@ -372,11 +396,12 @@ export function likedScore(scores: number[]) {
 }
 export function view(room: Room, id: string | null, now: number): RoomView {
   const member = id ? room.members[id] : null;
-  const seat = room.seats.find(s => s.owner === id && id !== null);
+  const seat = member?.entered === false ? undefined : room.seats.find(s => s.owner === id && id !== null);
   const own = seat ? room.submissions[seat.id] : null;
   const waiting = ["dialogue", "evaluating"].includes(room.phase);
   const dialogue = own && own.by === id ? { text: own.text, reply: waiting ? "" : own.reply, feedback: waiting ? "" : own.feedback, pending: own.pending, mode: own.mode, timedOut: own.timedOut } : null;
   return {
+    wakeAt: room.closedAt != null || room.pausedAt != null ? null : room.deadline,
     closedAt: room.closedAt ?? null, privateLobby: !!room.ownerId,
     minPlayers: room.minPlayers ?? null, maxPlayers: room.maxPlayers ?? null, timersEnabled: room.timersEnabled !== false,
     capacity: room.capacity ?? 5, winnerSitsOut: !!room.winnerSitsOut, canConfigure: !!id && room.ownerId === id,
@@ -398,7 +423,7 @@ export function view(room: Room, id: string | null, now: number): RoomView {
       const scored = visible && !!line && !!submission && !submission.pending;
       return { id: s.id, name: s.name, kind: s.owner ? "human" as const : "npc" as const, total: s.total, liked: likedScore(scores), submitted: !!submission, lastScore: ["feedback", "reveal", "creating"].includes(room.phase) ? submission?.score ?? null : null, line, mark: visible && submission && !submission.pending ? markOutOfTen(submission.score) ?? 0 : null, spokenAt: scored && (room.phase !== "results" || room.seats.indexOf(s) === room.speaker) ? submission.at || null : null, note: scored ? submission.feedback : null };
     }),
-    you: member ? { name: member.name, seatId: seat?.id ?? null, role: room.advisorId === id ? "advisor" : seat ? "suitor" : "spectator", submitted: !!own, dialogue } : null,
+    you: member ? { entered: member.entered !== false, name: member.name, seatId: seat?.id ?? null, role: room.advisorId === id ? "advisor" : seat ? "suitor" : "spectator", submitted: !!own, dialogue } : null,
     creatorName: room.creator.name, winner: room.winner ? { seatId: room.winner.seatId, name: room.winner.name, total: room.winner.total } : null,
     prompt: questionFor(room.reign, room.turn).question, revealedPreference: ["reveal", "creating"].includes(room.phase) ? room.preferences.prompt : null,
     canCreate: room.phase === "creating" && !!id && room.winner?.memberId === id && !!member,

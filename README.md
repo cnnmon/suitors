@@ -73,7 +73,11 @@ This imports the previous `.suitors/lobby.json` save once without overwriting an
 
 Private courts get their own `/l/<id>` invite URL. The creator is the admin and controls when the game starts, player limits, timers, and succession settings. Empty seats are filled by four NPCs; additional humans sit beside them.
 
-The admin must keep the lobby open. If no admin heartbeat is received for 25 seconds, the lobby closes permanently, though archived rounds remain stored.
+The admin must keep the lobby open. If no admin heartbeat is received for 25 seconds, the lobby closes permanently, though archived rounds remain stored. **Exit lobby** closes it immediately and returns to the public court. A guest who exits frees their seat and returns to the public court.
+
+## Admin reset
+
+`/admin` restarts the public court. Players who still have the page open reload and rejoin under the same name. The reign starts over at turn 1 when they enter. Anyone quiet for 25 seconds is dropped and rejoins fresh. The password is checked only in `app/api/admin/route.ts`.
 
 ## Key files
 
@@ -84,7 +88,8 @@ The admin must keep the lobby open. If no admin heartbeat is received for 25 sec
 - `lib/lobby/commands.ts` — actions and AI requests
 - `lib/lobby/archive.ts` — round history
 - `convex/schema.ts`, `convex/court.ts` — database and transactions
-- `hooks/useGame.ts` — client state
+- `hooks/useGame.ts` — client state; reloads when the court id changes
+- `app/admin/page.tsx`, `app/api/admin/route.ts` — password-gated public-court reset
 - `components/Stage.tsx`, `components/Conversation.tsx` — UI
 
 ## Checks
@@ -97,3 +102,13 @@ npm run build -- --webpack
 ```
 
 Tests cover seating, multiplayer flow, AI evaluations, succession, migration, security, resets, and score-history preservation using an isolated Convex backend.
+
+## Realtime updates and presence
+
+Browsers subscribe to `court.version`, a public signal containing only the court ID and revision. They fetch player-specific views through the existing cookie-authenticated `/api/lobby` endpoint when that signal changes. Hidden preferences, answers awaiting evaluation, and server credentials never enter the subscription.
+
+Every 10 seconds, a small presence request updates a separate Convex `presence` record; it does not rewrite the lobby or archives. A one-shot request at `wakeAt` advances timed phases on the server, including evaluation timeouts. If subscriptions disconnect, snapshot recovery runs at heartbeat speed. Tune `HEARTBEAT_MS` and `PRESENCE_MS` together in `lib/lobby/settings.ts`.
+
+Humans are kicked after 25 seconds without presence or two unanswered turns. Completed scorecards keep their original roster until the next question; departed human seats are then removed rather than converted to NPCs. Archived answers remain intact. Kicked players must explicitly choose **Join the court** to return.
+
+Deploy the Convex schema/functions before deploying the Next.js app. Old clients remain compatible; the reduced request rate requires the new frontend.

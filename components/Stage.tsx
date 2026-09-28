@@ -67,7 +67,6 @@ export function Stage({
     state.reply ||
     (state.thinking &&
       state.seats.some((seat) => seat.id === state.speakerId && seat.line));
-  const spread = state.seats.some((seat) => seat.line);
   const picked = state.winner;
   const seats = [...state.seats].sort(
     (a, b) =>
@@ -88,7 +87,7 @@ export function Stage({
             <br />A new princess is born
           </p>
           <img
-            className={twMerge("block h-auto w-80", pixel)}
+            className={twMerge("block h-auto w-90 ml-[-10px]", pixel)}
             src="/art/win.gif"
             width={137}
             height={136}
@@ -100,12 +99,12 @@ export function Stage({
   }
 
   return (
-    <section className="grid h-full w-full" aria-label="The shared court">
-      <div className="flex items-center justify-center">
+    <section className="h-full min-h-0 w-full" aria-label="The shared court">
+      <div className="relative flex h-full justify-between">
         <motion.div
-          className="w-full overflow-y-scroll flex justify-center items-center h-full"
+          className="flex overflow-y-auto px-10"
           initial={false}
-          animate={{ maxWidth: spread || dense ? "100%" : "62%" }}
+          animate={{ width: state.phase === "results" ? "50%" : "100%" }}
           transition={spring}
         >
           {seats.map((seat, index) => {
@@ -116,13 +115,13 @@ export function Stage({
             return (
               <div
                 key={seat.id}
-                className="flex h-full min-w-0 flex-col items-center justify-end px-0.5"
+                className="flex min-w-0 flex-col items-center justify-end px-0.5"
               >
                 <div className="relative flex w-full flex-col items-center">
                   {(up || thinking) && (
                     <Quote
                       long
-                      className="absolute bottom-full left-1/2 z-30 w-40 -translate-x-[56%] translate-y-[8%] text-sm"
+                      className="relative z-30 mb-[-8%] w-40 text-sm"
                       text={thinking ? "…" : seat.line!}
                       label={
                         thinking
@@ -244,10 +243,10 @@ export function Stage({
             );
           })}
         </motion.div>
-        <div className="relative h-full min-h-0 w-full absolute top-[-80px]">
+        <div className="relative h-full min-h-0 min-w-[200px] absolute top-[-80px] right-0">
           <img
             className={twMerge(
-              "pointer-events-none absolute bottom-[0] right-[190px] -translate-x-1/2 z-[2] h-30 w-auto max-w-none",
+              "pointer-events-none absolute bottom-0 left-[25] z-[1] h-30 w-auto max-w-none -translate-x-1/2",
               pixel,
             )}
             src="/art/kitty.png"

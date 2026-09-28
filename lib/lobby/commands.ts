@@ -1,11 +1,11 @@
-import { startCourt, closeIfAdminAbsent, continueUntimed, setTimers, advance, ensureJoined, enterCourt, heartbeat, LobbyError, nextPrincess, nextSpeaker, resetCourt, setName, submit, turnKey, view } from "./engine";
+import { adminReset, startCourt, closeIfAdminAbsent, continueUntimed, setTimers, advance, ensureJoined, enterCourt, heartbeat, leave, LobbyError, nextPrincess, nextSpeaker, resetCourt, setName, submit, turnKey, view } from "./engine";
 import { claimRound, finishRound, type Evaluation, type RoundJob } from "./round";
 import { preferenceEdits } from "./preferenceEdits";
 import { PREFERENCE_LIMIT, PREFERENCE_EDIT_LIMIT } from "./settings";
 import type { Preferences, Room, RoomView } from "./types";
 
 export type Command = {
-  action: "start" | "configure" | "sync" | "say" | "next" | "reset" | "enter" | "rename" | "create" | "finishRound" | "finishCreation";
+  action: "start" | "configure" | "sync" | "say" | "next" | "reset" | "adminReset" | "enter" | "rename" | "create" | "leave" | "finishRound" | "finishCreation";
   phase?: string; minPlayers?: number | null; maxPlayers?: number | null; timersEnabled?: boolean;
   lobbyId?: string; capacity?: number; winnerSitsOut?: boolean;
   id: string; key?: string; text?: string; live?: boolean; speakerId?: string;
@@ -24,6 +24,10 @@ export function execute(room: Room, command: Command, now: number): CommandResul
   const live = !!command.live;
   let result: Omit<CommandResult, "state"> = {};
   try {
+    if (action === "adminReset") {
+      adminReset(room, now);
+      return { state: view(room, null, now) };
+    }
     if (room.closedAt != null || (Object.keys(room.members).length > 0 && closeIfAdminAbsent(room, now))) return { state: view(room, id, now) };
     if (action === "sync") ensureJoined(room, id, now);
     else if (action !== "finishRound" && action !== "finishCreation") heartbeat(room, id, now);
@@ -48,13 +52,19 @@ export function execute(room: Room, command: Command, now: number): CommandResul
       if (command.winnerSitsOut !== undefined) room.winnerSitsOut = command.winnerSitsOut;
       room.revision++;
     }
+    if (action === "leave") {
+      const owner = room.ownerId === id;
+      leave(room, id, now);
+      if (owner) closeIfAdminAbsent(room, now);
+      if (room.closedAt != null) return { state: view(room, id, now) };
+    }
     if (action === "start") startCourt(room, id, now);
     if (action === "reset") resetCourt(room, id, now);
     if (action === "enter") enterCourt(room, id, now);
     if (action === "rename") setName(room, id, command.text, now);
     // Ignore duplicate or stale clicks from another tab viewing the same result.
     if (action === "next" && room.phase === "results" && command.key === turnKey(room) && command.speakerId === room.seats[room.speaker]?.id) nextSpeaker(room, id, now);
-    if (action === "next" && command.key === turnKey(room) && command.phase === room.phase && (room.phase === "feedback" || room.timersEnabled === false)) continueUntimed(room, now);
+    if (action === "next" && command.key === turnKey(room) && command.phase === room.phase && room.timersEnabled === false) continueUntimed(room, now);
     if (action === "say") submit(room, id, command.key, command.text, now);
     if (action === "finishRound") finishRound(room, command.key!, id, command.evaluations, now);
     if (action === "create") {

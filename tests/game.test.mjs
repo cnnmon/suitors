@@ -186,7 +186,7 @@ test('answers stay hidden until evaluation; preferences and identities stay priv
   for (const secret of [room.preferences.prompt, 'person-1', 'weights', 'members', 'vulnerability']) assert.equal(serialized.includes(secret), false);
   pass(room);
   const logged = view(room, 'person-0', room.deadline - 1);
-  assert.ok(logged.log.some(e => e.name === 'Player 0' && e.note && e.reply));
+  assert.ok(logged.log.some(e => e.name === 'Player 0' && e.note && e.reply && e.said === 'PRIVATE ALPHA'));
   assert.equal(view(room, null, 7100).you, null);
 });
 
@@ -210,6 +210,7 @@ test('winner creates the new princess and returns under a new name in the same s
   assert.equal(room.phase, 'creating');
   assert.equal(view(room, 'person-0', room.deadline - 1).canCreate, true);
   assert.equal(view(room, 'person-1', room.deadline - 1).canCreate, false);
+  for (const id of Object.keys(room.members)) heartbeat(room, id, room.deadline - 1);
   nextPrincess(room, preferences('Likes humor.'), room.deadline - 1);
   assert.equal(room.reign, 2); assert.equal(room.turn, 0);
   assert.equal(view(room, 'person-0', room.turnStartedAt).you.role, 'suitor');
@@ -344,6 +345,7 @@ test('automatic seat → three turns → winner rewrites preferences → new nam
   tick(room, room.deadline);
   assert.equal(view(room, 'person-0', room.deadline - 1).canCreate, true);
   const revisedPrompt = room.preferences.prompt.replace('Likes humor', 'Hates humor');
+  heartbeat(room, 'person-0', room.deadline - 1);
   nextPrincess(room, preferences(revisedPrompt), room.deadline - 1);
   const next = view(room, 'person-0', room.turnStartedAt);
   assert.equal(next.reign, 2);
@@ -469,11 +471,10 @@ test('creation timeout and NPC succession stay within the edit budget', () => {
   assert.ok(preferenceEdits(previous, room.preferences.prompt) <= 20);
 });
 
-test('a human who misses two rounds is replaced by that seat’s NPC', () => {
+test('a human who misses two rounds is kicked without becoming an NPC', () => {
   const room = start(2);
   const idle = 'person-1';
   const seatId = room.members[idle].seatId;
-  const npcName = room.seats.find(seat => seat.id === seatId).npcName;
   for (let turn = 0; turn < 2; turn++) {
     const now = room.turnStartedAt + 1000;
     submit(room, 'person-0', turnKey(room), 'Hello there.', now);
@@ -482,12 +483,29 @@ test('a human who misses two rounds is replaced by that seat’s NPC', () => {
     for (let step = 0; step < room.seats.length && room.phase === 'results'; step++) nextSpeaker(room, 'person-0', room.deadline + step);
     assert.equal(room.phase, 'feedback');
     if (turn === 0) assert.equal(room.members[idle].seatId, seatId);
+    else {
+      assert.equal(view(room, idle, room.deadline - 1).you.entered, false);
+      const rejoining = structuredClone(room);
+      const count = rejoining.seats.length;
+      execute(rejoining, { action: 'enter', id: idle }, rejoining.deadline - 1);
+      assert.equal(rejoining.seats.length, count);
+      assert.equal(rejoining.seats.filter(s => s.owner === idle).length, 1);
+      assert.equal(rejoining.members[idle].seatId, seatId);
+    }
     tick(room, room.deadline);
   }
-  assert.equal(room.seats.find(seat => seat.id === seatId).owner, null);
-  assert.equal(room.seats.find(seat => seat.id === seatId).name, npcName);
+  assert.equal(room.seats.some(seat => seat.id === seatId), false);
+  assert.equal(room.seats.filter(seat => !seat.owner).length, 4);
+  assert.equal(room.members[idle].entered, false);
+  assert.ok(room.history.every(turn => turn[seatId]));
   assert.equal(room.members[idle].seatId, null);
   assert.equal(view(room, idle, room.deadline).you.role, 'spectator');
+  const rejoinAt = room.turnStartedAt + 1;
+  execute(room, { action: 'sync', id: idle }, rejoinAt);
+  assert.equal(room.members[idle].seatId, null);
+  execute(room, { action: 'enter', id: idle }, rejoinAt + 1);
+  assert.notEqual(room.members[idle].seatId, seatId);
+  assert.equal(view(room, idle, rejoinAt + 1).you.role, 'suitor');
 });
 
 test('the last silent human times out before the single batch is claimed', () => {
@@ -506,7 +524,7 @@ test('the last silent human times out before the single batch is claimed', () =>
   assert.equal(room.submissions[silent.seatId].score, 0);
 });
 
-test('a disconnected unanswered browser becomes an NPC and releases the batch', () => {
+test('a disconnected unanswered browser is removed and releases the batch', () => {
   const room = start(2);
   const now = room.turnStartedAt + 1;
   const waiting = execute(room, { action: 'say', id: 'person-0', key: turnKey(room), text: 'Hello', live: true }, now);
@@ -621,21 +639,19 @@ test('sit-out setting applies at succession and lasts exactly one contest', () =
   assert.equal(view(room, 'person-1', room.turnStartedAt).you.role, 'suitor');
 });
 
-test('overdue feedback starts the next round instead of staying on Continuing', () => {
-  const room = start(2);
-  pass(room);
+test('Next cannot skip timed feedback, and a late duplicate cannot skip a question', () => {
+  const room = start(2); pass(room);
+  const key = turnKey(room);
+  const deadline = room.deadline;
+  const command = { action: 'next', id: 'person-0', key, phase: 'feedback' };
+  execute(room, command, deadline - 1);
   assert.equal(room.phase, 'feedback');
-  const late = room.deadline + 60_000;
-  heartbeat(room, 'person-0', late);
-  heartbeat(room, 'person-1', late);
-  advance(room, late);
+  assert.equal(room.deadline, deadline);
+  execute(room, command, deadline);
   assert.equal(room.phase, 'dialogue');
   assert.equal(room.turn, 1);
-  const again = start(2);
-  pass(again);
-  execute(again, { action: 'next', id: 'person-0', key: turnKey(again), phase: 'feedback' }, again.deadline - 1);
-  assert.equal(again.phase, 'dialogue');
-  assert.equal(again.turn, 1);
+  execute(room, command, deadline + 1);
+  assert.equal(room.turn, 1);
 });
 
 test('timers off allows untimed answers and manual progression through a whole reign', () => {
@@ -756,8 +772,47 @@ test('a genuinely paused answer timer restarts when players return', () => {
   advance(room, expired + PRESENCE_MS);
   assert.notEqual(room.pausedAt, null);
   const now = expired + 60_000;
+  for (const id of Object.keys(room.members)) { heartbeat(room, id, now); enterCourt(room, id, now); }
   tick(room, now);
   assert.equal(room.phase, 'dialogue');
   assert.equal(room.deadline, now + TURN_MS);
   assert.equal(room.pausedAt, null);
+});
+
+test('a waiting newcomer resumes abandoned feedback and gets a seat next question', () => {
+  const room = start(5); pass(room);
+  const history = structuredClone(room.history);
+  const now = room.deadline + PRESENCE_MS + 60_000;
+  advance(room, now - 1);
+  assert.notEqual(room.pausedAt, null);
+  const result = execute(room, { action: 'sync', id: 'newcomer' }, now);
+  assert.equal(result.state.phase, 'dialogue');
+  assert.equal(result.state.turn, 1);
+  assert.equal(result.state.you.role, 'suitor');
+  assert.ok(result.state.you.seatId);
+  assert.equal(room.pausedAt, null);
+  assert.ok(room.seats.every(s => !s.owner || s.owner === 'newcomer'));
+  assert.equal(room.history.length, history.length);
+  assert.equal(execute(room, { action: 'say', id: 'newcomer', key: turnKey(room), text: 'A tiny cloud.' }, now + 1).error, undefined);
+});
+
+
+test('joining during scorecards queues once and lets the newcomer reach their seat', () => {
+  const room = start();
+  execute(room, { action: 'say', id: 'person-0', key: turnKey(room), text: 'A garden.' }, 7000);
+  assert.equal(room.phase, 'results');
+  const roster = room.seats.map(s => s.id);
+  execute(room, { action: 'sync', id: 'newcomer' }, 7001);
+  const joined = execute(room, { action: 'enter', id: 'newcomer' }, 7002).state;
+  assert.equal(joined.you.entered, true);
+  assert.equal(joined.you.role, 'spectator');
+  assert.deepEqual(room.seats.map(s => s.id), roster);
+  for (let i = 0; room.phase === 'results'; i++) {
+    execute(room, { action: 'next', id: 'newcomer', phase: 'results', key: turnKey(room), speakerId: room.seats[room.speaker].id }, 7003 + i);
+  }
+  tick(room, room.deadline);
+  const seated = view(room, 'newcomer', room.turnStartedAt);
+  assert.equal(seated.you.role, 'suitor');
+  assert.equal(room.seats.filter(s => s.owner === 'newcomer').length, 1);
+  assert.equal(execute(room, { action: 'say', id: 'newcomer', key: turnKey(room), text: 'A new answer.' }, room.turnStartedAt + 1).error, undefined);
 });

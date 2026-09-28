@@ -16,8 +16,8 @@ function session(request: NextRequest) {
   return existing && /^[a-f0-9]{64}$/.test(existing) ? existing : randomBytes(32).toString("hex");
 }
 const json = (value: unknown, status = 200) => NextResponse.json(value, { status, headers: { "Cache-Control": "no-store" } });
-function respond(result: CommandResult, token: string, request: NextRequest) {
-  const response = result.error ? json({ error: result.error.message }, result.error.status) : json(result.state);
+function respond(result: CommandResult, token: string, request: NextRequest, presenceOnly = false) {
+  const response = result.error ? json({ error: result.error.message }, result.error.status) : presenceOnly ? new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } }) : json(result.state);
   response.cookies.set(cookieName, token, { httpOnly: true, sameSite: "strict", secure: request.nextUrl.protocol === "https:", path: "/", maxAge: 60 * 60 * 24 * 30 });
   return response;
 }
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
     const id = hash(token);
     const result = await dispatch({ action: "sync", id, lobbyId: requestedLobby(request), live: !!process.env.OPENAI_API_KEY });
     schedule(result, id, requestedLobby(request));
-    return respond(result, token, request);
+    return respond(result, token, request, request.nextUrl.searchParams.get("presence") === "1");
   } catch (error) { return errorResponse(error); }
 }
 export async function POST(request: NextRequest) {
@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
     if (raw.length > 2000) throw new LobbyError("That message is too long.", 413);
     let body: { action?: unknown; text?: unknown; turnKey?: unknown; speakerId?: unknown; capacity?: unknown; winnerSitsOut?: unknown; minPlayers?: unknown; maxPlayers?: unknown; timersEnabled?: unknown; phase?: unknown };
     try { body = JSON.parse(raw); } catch { throw new LobbyError("Invalid request."); }
-    if (!body || typeof body !== "object" || !["start", "newLobby", "configure", "say", "next", "reset", "enter", "rename", "create"].includes(String(body.action))) throw new LobbyError("Unknown action.");
+    if (!body || typeof body !== "object" || !["start", "newLobby", "configure", "say", "next", "reset", "enter", "rename", "create", "leave"].includes(String(body.action))) throw new LobbyError("Unknown action.");
     if (body.text !== undefined && typeof body.text !== "string") throw new LobbyError("Invalid answer.");
     if (body.turnKey !== undefined && typeof body.turnKey !== "string") throw new LobbyError("Invalid turn.");
     if (body.speakerId !== undefined && typeof body.speakerId !== "string") throw new LobbyError("Invalid result.");

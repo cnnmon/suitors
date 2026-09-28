@@ -4,7 +4,7 @@ import { convexTest } from "convex-test";
 import schema from "../convex/schema";
 import { api, internal } from "../convex/_generated/api";
 import { createRoom } from "../lib/lobby/engine";
-import { PRESENCE_MS, FEEDBACK_MS, REVEAL_MS, TURN_COUNT } from "../lib/lobby/settings";
+import { HEARTBEAT_MS, PRESENCE_MS, FEEDBACK_MS, REVEAL_MS, TURN_COUNT } from "../lib/lobby/settings";
 import type { Command } from "../lib/lobby/commands";
 
 const background = vi.hoisted(() => [] as Array<() => Promise<void>>);
@@ -388,6 +388,64 @@ test("admin refresh survives the grace period, but guests cannot keep an abandon
   expect((await sync()).closedAt).toBeNull();
 });
 
+test("exit lobby frees a guest and closes when the admin leaves", async () => {
+  const lobbyId = "exit-lobby";
+  await send({ action: "sync", id: "host", lobbyId });
+  await send({ action: "enter", id: "host", lobbyId });
+  await send({ action: "sync", id: "guest", lobbyId });
+  await send({ action: "enter", id: "guest", lobbyId });
+  const guestLeft = await send({ action: "leave", id: "guest", lobbyId });
+  expect(guestLeft.error).toBeUndefined();
+  expect(guestLeft.state.closedAt).toBeNull();
+  expect(guestLeft.state.seats.filter((seat) => seat.kind === "human")).toHaveLength(1);
+  const closed = await send({ action: "leave", id: "host", lobbyId });
+  expect(closed.state.closedAt).toBe(now);
+  expect((await send({ action: "sync", id: "guest", lobbyId })).state.closedAt).toBe(now);
+});
+
+test("admin password restarts the public court for players still present", async () => {
+  const { NextRequest } = await import("next/server");
+  const { POST } = await import("../app/api/admin/route");
+  const url = "http://localhost:3107/api/admin";
+  const reset = (password: string) => POST(new NextRequest(url, { method: "POST", headers: { origin: "http://localhost:3107" }, body: JSON.stringify({ password, action: "reset" }) }));
+  const first = await sync("one");
+  const second = await sync("two");
+  const firstName = first.you!.name;
+  const secondName = second.you!.name;
+  await send({ action: "say", id: "one", key: first.turnKey, text: "A pocket moon." });
+  const lobbyId = "untouched-court";
+  const privateCourt = (await send({ action: "sync", id: "host", lobbyId })).state.id;
+  const denied = await reset("nope");
+  expect(denied.status).toBe(401);
+  expect((await sync("one")).id).toBe(first.id);
+  const accepted = await reset("uwu");
+  expect(accepted.status).toBe(200);
+  expect(await accepted.json()).toMatchObject({ ok: true, humans: 2, phase: "lobby", reign: 1, turn: 0 });
+  const again = await sync("one");
+  expect(again.id).not.toBe(first.id);
+  expect(again).toMatchObject({ reign: 1, turn: 0, phase: "dialogue" });
+  expect(again.you).toMatchObject({ name: firstName, submitted: false });
+  expect(again.seats.every(seat => seat.total === 0)).toBe(true);
+  const other = await sync("two");
+  expect(other.id).toBe(again.id);
+  expect(other.you).toMatchObject({ name: secondName });
+  expect(other.you?.seatId).toBeTruthy();
+  expect(other.you?.seatId).not.toBe(again.you?.seatId);
+  expect((await db.query(api.court.history, { secret, gameId: first.id })).rounds.at(-1)?.status).toBe("reset");
+  expect((await send({ action: "sync", id: "host", lobbyId })).state.id).toBe(privateCourt);
+  await sync("three");
+  wait(PRESENCE_MS + 1);
+  await sync("one");
+  await sync("two");
+  const dropped = await reset("uwu");
+  expect(dropped.status).toBe(200);
+  expect(await dropped.json()).toMatchObject({ humans: 2, phase: "lobby", turn: 0 });
+  const returned = await sync("three");
+  expect(returned.id).toBe((await sync("one")).id);
+  expect(returned.you?.seatId).toBeTruthy();
+  expect((await sync("one")).you?.name).toBe(firstName);
+});
+
 test("scheduled expiry closes the lobby without a browser request", async () => {
   const lobbyId = "scheduled-expiry";
   await send({ action: "sync", id: "host", lobbyId });
@@ -396,4 +454,66 @@ test("scheduled expiry closes the lobby without a browser request", async () => 
   const saved = await db.run(ctx => ctx.db.query("lobbies").withIndex("by_key", q => q.eq("key", lobbyId)).unique());
   expect(saved?.room.closedAt).toBe(now);
   expect((await send({ action: "sync", id: "host", lobbyId })).state.closedAt).toBe(now);
+});
+
+
+test("heartbeats only write small presence records, not the game or its archives", async () => {
+  const first = await sync();
+  const snapshot = () => db.run(async ctx => ({
+    lobby: await ctx.db.query("lobbies").withIndex("by_key", q => q.eq("key", "shared")).unique(),
+    rounds: await ctx.db.query("rounds").collect(),
+    reigns: await ctx.db.query("reigns").collect(),
+    presence: await ctx.db.query("presence").collect(),
+  }));
+  const before = await snapshot();
+  wait(1_000); await send({ action: "sync", id: "player" });
+  expect(await snapshot()).toEqual(before);
+  wait(HEARTBEAT_MS); await send({ action: "sync", id: "player" });
+  const after = await snapshot();
+  expect(after.lobby).toEqual(before.lobby);
+  expect(after.rounds).toEqual(before.rounds);
+  expect(after.reigns).toEqual(before.reigns);
+  expect(after.presence).toHaveLength(1);
+  expect(after.presence[0].lastSeen).toBe(now);
+  expect(await db.query(api.court.version, {})).toEqual({ id: first.id, revision: first.revision });
+});
+
+test("subscription signal contains only identity and revision, and changes on an answer", async () => {
+  const state = await sync();
+  const before = await db.query(api.court.version, {});
+  expect(Object.keys(before!).sort()).toEqual(["id", "revision"]);
+  const result = await send({ action: "say", id: "player", key: state.turnKey, text: "A little cloud.", live: true });
+  const after = await db.query(api.court.version, {});
+  expect(after?.revision).toBe(result.state.revision);
+  expect(after?.revision).toBeGreaterThan(before!.revision);
+  expect(await db.query(api.court.version, { lobbyId: "missing-court" })).toBeNull();
+});
+
+test("separate heartbeats keep a private admin alive without rewriting the lobby", async () => {
+  const lobbyId = "presence-private";
+  await send({ action: "sync", id: "host", lobbyId });
+  const before = await db.run(ctx => ctx.db.query("lobbies").withIndex("by_key", q => q.eq("key", lobbyId)).unique());
+  for (let i = 0; i < 4; i++) {
+    wait(HEARTBEAT_MS);
+    expect((await send({ action: "sync", id: "host", lobbyId })).state.closedAt).toBeNull();
+    await db.mutation(internal.court.expireLobby, { lobbyId });
+  }
+  expect(await db.run(ctx => ctx.db.query("lobbies").withIndex("by_key", q => q.eq("key", lobbyId)).unique())).toEqual(before);
+  wait(PRESENCE_MS + 1);
+  await db.mutation(internal.court.expireLobby, { lobbyId });
+  expect((await send({ action: "sync", id: "guest", lobbyId })).state.closedAt).toBe(now);
+});
+
+test("presence endpoint returns no game payload and deadline wake exposes hidden phase timers safely", async () => {
+  const { NextRequest } = await import("next/server");
+  const { GET } = await import("../app/api/lobby/route");
+  const response = await GET(new NextRequest("http://localhost:3107/api/lobby?presence=1"));
+  expect(response.status).toBe(204);
+  expect(await response.text()).toBe("");
+  expect(response.headers.get("set-cookie")).toBeTruthy();
+  const state = await sync();
+  const result = await send({ action: "say", id: "player", key: state.turnKey, text: "A tiny moon.", live: true });
+  expect(result.state.phase).toBe("evaluating");
+  expect(result.state.deadline).toBeNull();
+  expect(result.state.wakeAt).toBeGreaterThan(now);
 });

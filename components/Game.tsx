@@ -8,6 +8,8 @@ import { Conversation } from "./Conversation";
 import { LobbySettings } from "./LobbySettings";
 import { Stage } from "./Stage";
 import { TURN_COUNT, PREFERENCE_EDIT_LIMIT } from "@/lib/lobby/settings";
+import { motion } from "framer-motion";
+import React from "react";
 
 const frame = "relative h-[600px] w-[980px] shrink-0 overflow-hidden";
 
@@ -37,8 +39,9 @@ function Lineages({
       .catch(() => setFailed(true));
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, lobbyId]);
+
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-6">
+    <div>
       <div
         role="dialog"
         aria-modal="true"
@@ -200,7 +203,7 @@ function HowToPlay({
 
 export function Game({ lobbyId }: { lobbyId?: string }) {
   const game = useGame(lobbyId);
-  const { state, connected, clock } = game;
+  const { state, clock } = game;
   const [intro, setIntro] = useState(true);
   const [lineages, setLineages] = useState(false);
   const [settingsMode, setSettingsMode] = useState<"create" | "edit" | null>(
@@ -208,6 +211,12 @@ export function Game({ lobbyId }: { lobbyId?: string }) {
   );
   const [invite, setInvite] = useState("");
   const [copied, setCopied] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  async function exitLobby() {
+    setLeaving(true);
+    await game.leave();
+    window.location.assign("/");
+  }
   async function copyInvite() {
     const url = `${window.location.origin}/l/${lobbyId}`;
     setInvite(url);
@@ -232,7 +241,7 @@ export function Game({ lobbyId }: { lobbyId?: string }) {
     );
   }
 
-  if (state.closedAt != null)
+  if (state.closedAt != null && !leaving)
     return (
       <main
         className={twMerge(
@@ -247,176 +256,187 @@ export function Game({ lobbyId }: { lobbyId?: string }) {
     );
 
   return (
-    <main
-      className={twMerge(
-        frame,
-        "grid grid-rows-[auto_minmax(0,1fr)_auto_auto] gap-2 overflow-hidden bg-[#eed9ec] bg-[url('/art/texturedbg.png')] bg-cover bg-center p-3",
-      )}
-    >
-      <header className="flex shrink-0 items-start justify-between gap-4">
-        <h1 className="m-0 min-w-0 overflow-visible pt-1 font-display text-2xl uppercase">
-          the suitors and
-          <br />
-          the ai princess
-        </h1>
-        <div className="grid shrink-0 justify-items-end gap-1 whitespace-nowrap">
-          {lobbyId && (
-            <span className="bg-paper px-1 text-xs">
+    <div>
+      <div className="w-full bg-paper text-sm flex justify-between p-2 border-b-2">
+        {lobbyId ? (
+          <>
+            <span>
               {state.canConfigure ? "Your lobby · Admin" : "Invite lobby"} ·{" "}
               {state.seats.filter((s) => s.kind === "human").length}/
               {state.capacity} players
             </span>
-          )}
-          <div className="flex gap-3 bg-paper px-1 text-sm">
-            {lobbyId && (
+            <div className="flex items-center gap-2">
+              {invite && (
+                <input
+                  aria-label="Invite URL"
+                  readOnly
+                  value={invite}
+                  onFocus={(e) => e.currentTarget.select()}
+                  className="w-64 border border-ink bg-paper px-2 text-xs"
+                />
+              )}
               <button onClick={() => void copyInvite()}>
                 {copied ? "Link copied!" : "Copy invite link"}
               </button>
-            )}
-            {state.canConfigure && (
-              <button onClick={() => setSettingsMode("edit")}>Settings</button>
-            )}
-          </div>
-          {invite && (
-            <input
-              aria-label="Invite URL"
-              readOnly
-              value={invite}
-              onFocus={(e) => e.currentTarget.select()}
-              className="w-64 border border-ink bg-paper px-2 text-xs"
-            />
-          )}
-          <span
-            className={twMerge(
-              "bg-paper px-1 before:text-[#9c7b6a] before:content-['⋅_']",
-              connected && "before:text-ink",
-            )}
-          >
-            {connected
-              ? state.phase === "reveal"
-                ? "evaluation"
-                : state.creatorName === "The founding council"
-                  ? "woo the princess~"
-                  : `a new princess`
-              : "connecting…"}
-          </span>
-          {state && (
-            <span className="bg-paper px-1">
-              reign {state.reign} · turn {state.turn + 1}/{TURN_COUNT}
+              {state.canConfigure && (
+                <button onClick={() => setSettingsMode("edit")}>
+                  Settings
+                </button>
+              )}
+              <button disabled={leaving} onClick={() => void exitLobby()}>
+                Exit lobby
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <span>
+              Public court ·{" "}
+              {state.seats.filter((s) => s.kind === "human").length}/
+              {state.capacity} players
             </span>
-          )}
-        </div>
-      </header>
-      <div
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() =>
+                  setSettingsMode((mode) =>
+                    mode === "create" ? null : "create",
+                  )
+                }
+              >
+                {settingsMode === "create"
+                  ? "Exit private court"
+                  : "Make private court"}
+              </button>
+              <button onClick={() => setLineages(true)}>Past lineages</button>
+            </div>
+          </>
+        )}
+      </div>
+      <main
         className={twMerge(
-          "grid h-full justify-end flex overflow-hidden",
-          state.log.length
-            ? "grid-cols-[minmax(0,1fr)_22%] gap-3"
-            : "justify-items-center",
+          frame,
+          "overflow-hidden bg-[#eed9ec] bg-[url('/art/texturedbg.png')] bg-cover bg-center p-3",
         )}
       >
-        <div
-          className={twMerge(
-            "h-full min-h-0 w-[calc(100%-300px)] absolute left-10 top-[-130px]",
-          )}
-        >
-          <Stage
-            state={state}
-            now={clock}
-            onRename={game.rename}
-            busy={game.busy}
-            error={game.error}
+        <header className="relative z-0 flex shrink-0 items-start justify-between gap-4">
+          <h1 className="m-0 min-w-0 overflow-visible pt-1 font-display text-2xl uppercase">
+            the suitors and
+            <br />
+            the ai princess
+          </h1>
+          <div className="grid shrink-0 justify-items-end gap-1 whitespace-nowrap">
+            {state && (
+              <span className="bg-paper px-1">
+                reign {state.reign} · turn {state.turn + 1}/{TURN_COUNT}
+              </span>
+            )}
+          </div>
+        </header>
+        <div>
+          <div
+            className={twMerge(
+              "absolute top-[-160px] left-10 z-[2] h-full min-h-0 w-[calc(100%-100px)]",
+            )}
+          >
+            <Stage
+              state={state}
+              now={clock}
+              onRename={game.rename}
+              busy={game.busy}
+              error={game.error}
+            />
+          </div>
+        </div>
+        {/*<div className="flex overflow-hidden border-2 border-ink bg-paper p-2 w-50 m-4 h-90 text-xs z-[2] fixed right-0">
+          {state.log.length ? (
+            <aside aria-label="Court history">
+              <ol className="m-0 min-h-0 list-none overflow-auto p-0">
+                {state.log.map((entry, index) => {
+                  const prev = state.log[index - 1];
+                  const showRound =
+                    entry.turn != null && entry.turn !== prev?.turn;
+                  return (
+                    <li
+                      key={`${entry.name}:${index}`}
+                      className="border-b border-ink/20 py-1"
+                    >
+                      {showRound && (
+                        <span className="mb-0.5 block opacity-60">
+                          Round {entry.turn}
+                        </span>
+                      )}
+                      {entry.said && (
+                        <span className="mt-0.5 block break-words">
+                          {entry.name} said: {entry.said}
+                        </span>
+                      )}
+                      {entry.reply && (
+                        <span className="mt-0.5 block">
+                          Princess replied: {entry.reply} {entry.event}
+                        </span>
+                      )}
+                      {!entry.said && !entry.reply && entry.event && (
+                        <span className="mt-0.5 block">
+                          {entry.name} {entry.event}
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ol>
+            </aside>
+          ) : undefined}
+        </div>*/}
+        <div className="absolute bottom-0 p-4 z-[5]">
+          <Conversation
+            key={`${state.turnKey}:${state.phase}:${state.speakerId ?? "court"}:${state.you?.seatId ?? "guest"}`}
+            game={game}
           />
         </div>
-        {state.log.length ? (
-          <aside
-            className="flex overflow-hidden border-2 border-ink bg-paper p-2 w-50 m-4 z-[3] h-90"
-            aria-label="Court history"
-          >
-            <ol className="m-0 min-h-0 list-none overflow-auto p-0">
-              {state.log.length ? (
-                state.log.map((entry, index) => (
-                  <li
-                    key={`${entry.name}:${index}`}
-                    className="border-b border-ink/20 py-1"
-                  >
-                    {entry.name} {entry.event}
-                    {entry.note && (
-                      <span className="mt-0.5 block">{entry.note}</span>
-                    )}
-                    {entry.reply && (
-                      <span className="mt-0.5 block">“{entry.reply}”</span>
-                    )}
-                  </li>
-                ))
-              ) : (
-                <li className="opacity-70">Nothing yet.</li>
-              )}
-            </ol>
-          </aside>
-        ) : undefined}
-      </div>
-      <div className="absolute bottom-0 p-4 z-[1]">
-        <Conversation
-          key={`${state.turnKey}:${state.phase}:${state.speakerId ?? "court"}:${state.you?.seatId ?? "guest"}`}
-          game={game}
-        />
-      </div>
-      <footer className="absolute p-4 bottom-0 right-0">
-        {state && (
-          <span className="flex gap-2 flex-col text-right">
-            <button
-              className="bg-paper"
-              onClick={() =>
-                setSettingsMode((mode) => (mode === "create" ? null : "create"))
-              }
-            >
-              {"> "}
-              {settingsMode === "create"
-                ? "exit private court"
-                : "make private court"}
-            </button>
-
-            <button className="bg-paper" onClick={() => setLineages(true)}>
-              {"> "}see past lineages
-            </button>
-          </span>
+        {((state.phase === "lobby" && !state.you?.seatId) || intro) && (
+          <HowToPlay
+            privateLobby={!!lobbyId}
+            required={state.phase === "lobby"}
+            winnerSitsOut={state.winnerSitsOut}
+            onCreateLobby={() => setSettingsMode("create")}
+            onClose={() => {
+              setIntro(false);
+              if (state.phase === "lobby" || state.you?.role === "spectator")
+                void game.enter();
+            }}
+          />
         )}
-      </footer>
-      {((state.phase === "lobby" && !state.you?.seatId) || intro) && (
-        <HowToPlay
-          privateLobby={!!lobbyId}
-          required={state.phase === "lobby"}
-          winnerSitsOut={state.winnerSitsOut}
-          onCreateLobby={() => setSettingsMode("create")}
-          onClose={() => {
-            setIntro(false);
-            if (state.phase === "lobby" || state.you?.role === "spectator")
-              void game.enter();
-          }}
-        />
-      )}
-      {lineages && (
-        <Lineages lobbyId={lobbyId} onClose={() => setLineages(false)} />
-      )}
-      {settingsMode && (
-        <LobbySettings
-          key={settingsMode}
-          onClose={() => setSettingsMode(null)}
-          initial={
-            settingsMode === "edit"
-              ? {
-                  minPlayers: state.minPlayers,
-                  maxPlayers: state.maxPlayers,
-                  timersEnabled: state.timersEnabled,
-                  winnerSitsOut: state.winnerSitsOut,
-                }
-              : undefined
-          }
-          onSave={settingsMode === "edit" ? game.configure : undefined}
-          started={settingsMode === "edit" && state.phase !== "lobby"}
-        />
-      )}
-    </main>
+        {lineages && (
+          <motion.div
+            layoutId="lineages"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-6"
+          >
+            <Lineages lobbyId={lobbyId} onClose={() => setLineages(false)} />
+          </motion.div>
+        )}
+
+        {settingsMode && (
+          <LobbySettings
+            key={settingsMode}
+            onClose={() => setSettingsMode(null)}
+            initial={
+              settingsMode === "edit"
+                ? {
+                    minPlayers: state.minPlayers,
+                    maxPlayers: state.maxPlayers,
+                    timersEnabled: state.timersEnabled,
+                    winnerSitsOut: state.winnerSitsOut,
+                  }
+                : undefined
+            }
+            onSave={settingsMode === "edit" ? game.configure : undefined}
+            started={settingsMode === "edit" && state.phase !== "lobby"}
+          />
+        )}
+      </main>
+    </div>
   );
 }

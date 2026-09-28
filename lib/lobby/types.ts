@@ -28,11 +28,11 @@ export type RoomView = {
   minPlayers: number | null; maxPlayers: number | null; timersEnabled: boolean;
   capacity: number; winnerSitsOut: boolean; canConfigure: boolean;
   id: string; revision: number; reign: number; turn: number; phase: LobbyPhase;
-  deadline: number | null; serverNow: number; turnKey: string;
+  wakeAt: number | null; deadline: number | null; serverNow: number; turnKey: string;
   seats: Array<{ id: string; name: string; kind: "human" | "npc"; total: number; liked: number; submitted: boolean; lastScore: number | null; line: string | null; mark: number | null; spokenAt: number | null; note: string | null }>;
-  you: { name: string; seatId: string | null; role: "suitor" | "spectator" | "advisor"; submitted: boolean; dialogue: Pick<Submission, "text" | "reply" | "feedback" | "pending" | "mode" | "timedOut"> | null } | null;
+  you: { entered: boolean; name: string; seatId: string | null; role: "suitor" | "spectator" | "advisor"; submitted: boolean; dialogue: Pick<Submission, "text" | "reply" | "feedback" | "pending" | "mode" | "timedOut"> | null } | null;
   speakerId: string | null; reply: string | null; thinking: boolean;
-  log: Array<{ name: string; event: string; note: string | null; reply: string | null }>;
+  log: Array<{ name: string; event: string | null; note: string | null; reply: string | null; said: string | null; turn: number | null }>;
   creatorName: string; winner: { seatId: string; name: string; total: number } | null;
   prompt: string; revealedPreference: string | null; canCreate: boolean; creationPending: boolean; humanCount: number;
 };

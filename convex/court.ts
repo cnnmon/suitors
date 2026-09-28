@@ -1,3 +1,4 @@
+import { gameState, hydratePresence, recordPresence } from "./presence";
 import { internal } from "./_generated/api";
 import { PRESENCE_MS } from "../lib/lobby/settings";
 import { ConvexError, v } from "convex/values";
@@ -33,7 +34,7 @@ async function archive(ctx: MutationCtx, room: Room, now: number, reset = false)
 // is readable directly from a browser, even if someone knows the deployment URL.
 export const dispatch = mutation({
   args: { secret: v.string(), command: v.object({
-    action: v.union(v.literal("start"),v.literal("configure"), v.literal("sync"), v.literal("say"), v.literal("next"), v.literal("reset"), v.literal("enter"), v.literal("rename"), v.literal("create"), v.literal("finishRound"), v.literal("finishCreation")),
+    action: v.union(v.literal("start"),v.literal("configure"), v.literal("sync"), v.literal("say"), v.literal("next"), v.literal("reset"), v.literal("adminReset"), v.literal("enter"), v.literal("rename"), v.literal("create"), v.literal("leave"), v.literal("finishRound"), v.literal("finishCreation")),
     phase: v.optional(v.string()), minPlayers: v.optional(v.union(v.number(), v.null())), maxPlayers: v.optional(v.union(v.number(), v.null())), timersEnabled: v.optional(v.boolean()),
     lobbyId: v.optional(v.string()), capacity: v.optional(v.number()), winnerSitsOut: v.optional(v.boolean()),
     id: v.string(), key: v.optional(v.string()), speakerId: v.optional(v.string()), text: v.optional(v.string()), live: v.optional(v.boolean()),
@@ -53,21 +54,41 @@ export const dispatch = mutation({
       const previous = room.reign > 1 ? await ctx.db.query("reigns").withIndex("by_key", q => q.eq("key", `${room.id}:${room.reign - 1}`)).unique() : null;
       room.lastRevealedPreference = previous?.status === "completed" ? previous.preferences.prompt : null;
     }
-    const before = structuredClone(room);
     const now = Date.now();
+    await hydratePresence(ctx, room, now);
+    const before = structuredClone(room);
     const result = execute(room, args.command as Command, now);
     if (room.ownerId && !room.adminWatchStarted && room.closedAt == null) {
       await ctx.scheduler.runAfter(PRESENCE_MS + 1, internal.court.expireLobby, { lobbyId: key });
       room.adminWatchStarted = true;
     }
-    if (!saved || before.revision !== room.revision) {
+    const changed = !saved || gameState(before) !== gameState(room);
+    if (changed) {
+      // Some timer/presence transitions do not explicitly touch the revision.
+      if (saved && room.id === before.id && room.revision === before.revision) room.revision++;
+      result.state.revision = room.revision;
       // Preserve the outgoing round BEFORE a reset or a new princess clears it.
       if (saved) await archive(ctx, before, now, room.id !== before.id || room.closedAt != null);
       await archive(ctx, room, now, room.closedAt != null);
     }
-    if (saved) await ctx.db.patch(saved._id, { room, updatedAt: now });
-    else await ctx.db.insert("lobbies", { key, room, updatedAt: now });
+    if (changed) {
+      if (saved) await ctx.db.patch(saved._id, { room, updatedAt: now });
+      else await ctx.db.insert("lobbies", { key, room, updatedAt: now });
+    }
+    if (!["finishRound", "finishCreation", "adminReset"].includes(args.command.action)) {
+      await recordPresence(ctx, room, args.command.id, now);
+    }
     return result;
+  },
+});
+
+// Public invalidation signal only. Player-specific views and all game commands
+// still go through the cookie-authenticated Next.js server. Never return Room here.
+export const version = query({
+  args: { lobbyId: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const lobby = await ctx.db.query("lobbies").withIndex("by_key", q => q.eq("key", lobbyKey(args.lobbyId))).unique();
+    return lobby ? { id: lobby.room.id, revision: lobby.room.revision } : null;
   },
 });
 
@@ -79,6 +100,7 @@ export const expireLobby = internalMutation({
     if (!saved || saved.room.closedAt != null || !saved.room.ownerId) return;
     const room = saved.room as Room;
     const now = Date.now();
+    await hydratePresence(ctx, room, now);
     if (closeIfAdminAbsent(room, now)) {
       await archive(ctx, room, now, true);
       await ctx.db.patch(saved._id, { room, updatedAt: now });
@@ -93,7 +115,9 @@ export const lineages = query({
   handler: async (ctx, args) => {
     authorize(args.secret);
     const lobby = await ctx.db.query("lobbies").withIndex("by_key", q => q.eq("key", lobbyKey(args.lobbyId))).unique();
-    if (!lobby || closeIfAdminAbsent(lobby.room as Room, Date.now())) return [];
+    if (!lobby) return [];
+    await hydratePresence(ctx, lobby.room as Room, Date.now());
+    if (closeIfAdminAbsent(lobby.room as Room, Date.now())) return [];
     const gameId = (lobby.room as Room).id;
     const reigns = await ctx.db.query("reigns").withIndex("by_game", q => q.eq("gameId", gameId)).collect();
     const rounds = await ctx.db.query("rounds").withIndex("by_game", q => q.eq("gameId", gameId)).collect();

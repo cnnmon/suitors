@@ -23,6 +23,8 @@ export const room = v.object({
 });
 
 export default defineSchema({
+  presence: defineTable({ gameId: v.string(), memberId: v.string(), lastSeen: v.number() })
+    .index("by_member", ["gameId", "memberId"]).index("by_game_seen", ["gameId", "lastSeen"]),
   lobbies: defineTable({ key: v.string(), room, updatedAt: v.number() }).index("by_key", ["key"]),
   reigns: defineTable({
     key: v.string(), gameId: v.string(), reign: v.number(), preferences, creator, winner,
