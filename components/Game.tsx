@@ -314,7 +314,7 @@ export function Game({ lobbyId }: { lobbyId?: string }) {
             "h-full min-h-0 w-[calc(100%-300px)] absolute left-10 top-[-130px]",
           )}
         >
-          <Stage state={state} now={clock} />
+          <Stage state={state} now={clock} onRename={game.rename} busy={game.busy} error={game.error} />
         </div>
         {state.log.length ? (
           <aside

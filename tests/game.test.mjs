@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -6,6 +7,7 @@ import { join, dirname, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import ts from 'typescript';
 
+execFileSync(process.execPath, ['scripts/build-moderation-keywords.mjs'], { stdio: 'inherit' });
 const output = mkdtempSync(join(tmpdir(), 'suitors-tests-'));
 for (const file of readdirSync('lib/lobby').filter(f => f.endsWith('.ts'))) {
   const target = join(output, file.replace(/\.ts$/, '.js'));
@@ -28,6 +30,7 @@ const { execute } = require(join(output, 'commands.js'));
 const { scriptedDialogue, npcText } = require(join(output, 'dialogue.js'));
 const { lineagesFrom } = require(join(output, 'lineage.js'));
 const { courtFailure } = require(join(output, 'failure.js'));
+const { MODERATION_KEYWORDS, blockedName } = require(join(output, 'moderation.js'));
 const preferences = (prompt) => ({ prompt, weights: interpretShortPreferences(prompt), source: 'scripted' });
 function tick(room, now) {
   for (const id of Object.keys(room.members)) heartbeat(room, id, now);
@@ -61,10 +64,10 @@ function finishReign(room) {
 
 for (let humans = 1; humans <= 5; humans++) test(`${humans} browsers share the court and finish three timed turns`, () => {
   const room = start(humans);
-  const size = humans <= 1 ? 4 : Math.min(5, humans + 2);
+  const size = 4 + humans;
   assert.equal(room.seats.length, size);
   assert.equal(room.seats.filter(s => s.owner).length, humans);
-  assert.equal(room.seats.filter(s => !s.owner).length, size - humans);
+  assert.equal(room.seats.filter(s => !s.owner).length, 4);
   finishReign(room);
   assert.equal(room.history.length, TURN_COUNT);
   for (const seat of room.seats) assert.equal(seat.total, room.history.reduce((sum, t) => sum + t[seat.id].score, 0));
@@ -87,27 +90,31 @@ test('a solo court has no dialogue timer; two people do', () => {
   assert.equal(view(room, 'person-0', room.turnStartedAt).deadline, room.deadline);
 });
 
-test('a new browser replaces an NPC and existing browsers keep their seats', () => {
+test('a new browser sits beside the NPCs and existing browsers keep their seats', () => {
   const room = start();
   const original = room.members['person-0'].seatId;
+  const npcs = room.seats.filter(s => !s.owner).map(s => s.id);
   enter(room, 'second', 'Second', 7000);
   assert.equal(room.members['person-0'].seatId, original);
+  assert.deepEqual(room.seats.filter(s => !s.owner).map(s => s.id), npcs);
   assert.equal(view(room, 'second', 7000).you.role, 'suitor');
   assert.equal(view(room, 'person-0', 7000).seats.filter(s => s.kind === 'human').length, 2);
+  assert.equal(view(room, 'person-0', 7000).seats.filter(s => s.kind === 'npc').length, 4);
 });
 
-test('arrivals inherit an NPC seat without changing the pending batch', () => {
+test('arrivals during judging wait, then sit as extra suitors next turn', () => {
   const room = start();
+  const npcs = room.seats.filter(s => !s.owner).map(s => s.id);
   submit(room, 'person-0', turnKey(room), 'Hello', 7000);
   const job = claimRound(room, 'person-0', 7001, true);
   enter(room, 'late', 'Late', 7002);
-  assert.equal(view(room, 'late', 7002).you.role, 'suitor');
-  assert.equal(view(room, 'late', 7002).you.submitted, true);
-  assert.equal(view(room, 'late', 7002).you.dialogue, null);
+  assert.equal(view(room, 'late', 7002).you.role, 'spectator');
+  assert.deepEqual(room.seats.filter(s => !s.owner).map(s => s.id), npcs);
   assert.equal(job.suitors.length, room.seats.length);
   finishRound(room, job.key, 'person-0', undefined, 7003);
   pass(room); tick(room, room.deadline);
   assert.equal(view(room, 'late', room.turnStartedAt).you.role, 'suitor');
+  assert.equal(room.seats.filter(s => !s.owner).length, 4);
 });
 
 test('full courts queue spectators and promote them when a seat opens', () => {
@@ -118,15 +125,15 @@ test('full courts queue spectators and promote them when a seat opens', () => {
   assert.equal(room.seats.filter(s => s.owner).length, 5);
 });
 
-test('expired participants become NPCs; refreshed sessions retain active seats', () => {
+test('expired participants leave extra seats; refreshed sessions retain active seats', () => {
   const room = start(2);
   const firstSeat = room.members['person-0'].seatId;
   heartbeat(room, 'person-0', PRESENCE_MS + 7000);
   advance(room, PRESENCE_MS + 7000);
   assert.equal(room.members['person-0'].seatId, firstSeat);
   assert.equal(room.members['person-1'].seatId, null);
-  assert.equal(room.seats[1].owner, null);
-  assert.equal(room.seats[1].name, room.seats[1].npcName);
+  assert.equal(room.seats.filter(s => s.owner).length, 1);
+  assert.equal(room.seats.filter(s => !s.owner).length, 4);
 });
 
 test('server deadlines close a silent human and open the next suitor', () => {
@@ -157,10 +164,10 @@ test('results show one response sign at a time after the batch finishes', () => 
   submit(room, 'person-0', turnKey(room), 'First seat second.', 7100);
   claimRound(room, 'person-0', 7200, false);
   let state = view(room, 'person-0', 7200);
-  assert.equal(responseSign(state.seats, state.speakerId).name, 'Player 0');
+  assert.equal(responseSign(state.seats, state.speakerId).name, room.seats[0].name);
   nextSpeaker(room, 'person-0', 8000);
   state = view(room, 'person-0', 8000);
-  assert.equal(responseSign(state.seats, state.speakerId).name, 'Player 1');
+  assert.equal(responseSign(state.seats, state.speakerId).name, room.seats[1].name);
 });
 
 test('answers stay hidden until evaluation; preferences and identities stay private', () => {
@@ -173,7 +180,8 @@ test('answers stay hidden until evaluation; preferences and identities stay priv
   assert.equal(waiting.you.dialogue.reply, '');
   claimRound(room, 'person-0', 7100, false);
   const state = view(room, 'person-0', 7100);
-  assert.equal(state.seats[1].line, 'PRIVATE BETA');
+  const beta = state.seats.find(s => s.name === 'Player 1');
+  assert.equal(beta.line, 'PRIVATE BETA');
   const serialized = JSON.stringify(state);
   for (const secret of [room.preferences.prompt, 'person-1', 'weights', 'members', 'vulnerability']) assert.equal(serialized.includes(secret), false);
   pass(room);
@@ -205,7 +213,7 @@ test('winner creates the new princess and returns under a new name in the same s
   nextPrincess(room, preferences('Likes humor.'), room.deadline - 1);
   assert.equal(room.reign, 2); assert.equal(room.turn, 0);
   assert.equal(view(room, 'person-0', room.turnStartedAt).you.role, 'suitor');
-  assert.equal(room.seats.length, 5); assert.equal(room.seats.filter(s => !s.owner).length, 0);
+  assert.equal(room.seats.length, 9); assert.equal(room.seats.filter(s => !s.owner).length, 4);
   assert.ok(room.seats.every(s => s.total === 0));
   assert.equal(view(room, 'person-1', room.turnStartedAt).revealedPreference, null);
 });
@@ -519,18 +527,19 @@ test('Next shows the selected scorecard immediately and keeps it visible', () =>
   assert.equal(responseSign(state.seats, state.speakerId).name, room.seats[1].name);
 });
 
-test('returning spectator inherits an NPC in results and can answer next round', () => {
+test('returning spectator waits, then sits beside the NPCs next round', () => {
   const room = start();
   pass(room);
   ensureJoined(room, 'returning', 8000);
   const first = view(room, 'returning', 8000);
-  assert.equal(first.you.role, 'suitor');
-  assert.equal(first.you.dialogue, null);
+  assert.equal(first.you.role, 'spectator');
   const count = room.seats.length;
   ensureJoined(room, 'returning', 8001);
   assert.equal(room.seats.length, count);
-  assert.equal(view(room, 'returning', 8001).you.seatId, first.you.seatId);
   tick(room, room.deadline);
+  assert.equal(view(room, 'returning', room.turnStartedAt).you.role, 'suitor');
+  assert.equal(room.seats.length, count + 1);
+  assert.equal(room.seats.filter(s => !s.owner).length, 4);
   assert.doesNotThrow(() => submit(room, 'returning', turnKey(room), 'My own answer.', room.turnStartedAt + 1));
 });
 
@@ -581,8 +590,9 @@ test('bots receive only the previously revealed preference, retained across roun
 for (const capacity of [2, 15]) test(`invite court fits ${capacity} human players and completes a reign`, () => {
   const room = createRoom(capacity);
   for (let i = 0; i < capacity; i++) { enter(room, `person-${i}`, `Player ${i}`, 0); enterCourt(room, `person-${i}`, 1); }
-  assert.equal(room.seats.length, capacity);
+  assert.equal(room.seats.length, capacity + 4);
   assert.equal(room.seats.filter(s => s.owner).length, capacity);
+  assert.equal(room.seats.filter(s => !s.owner).length, 4);
   enter(room, 'overflow', 'Overflow', 2); enterCourt(room, 'overflow', 2);
   assert.equal(view(room, 'overflow', 2).you.role, 'spectator');
   finishReign(room);
@@ -604,7 +614,7 @@ test('sit-out setting applies at succession and lasts exactly one contest', () =
   assert.equal(changed.error, undefined);
   assert.equal(changed.state.you.role, 'advisor');
   room.phase = 'creating';
-  room.winner = { seatId: room.seats[1].id, memberId: 'person-1', name: room.members['person-1'].name, total: 100 };
+  room.winner = { seatId: room.members['person-1'].seatId, memberId: 'person-1', name: room.members['person-1'].name, total: 100 };
   nextPrincess(room, preferences('Likes confidence.'), room.turnStartedAt + 3);
   assert.equal(view(room, 'person-0', room.turnStartedAt).you.role, 'suitor');
   assert.notEqual(room.members['person-0'].name, originalName);
@@ -655,4 +665,82 @@ test('minimum humans gates entry; NPCs do not count', () => {
   assert.ok(room.seats.some(s => !s.owner));
   ensureJoined(room, 'two', 1); enterCourt(room, 'two', 1);
   assert.equal(room.phase, 'dialogue');
+});
+
+test('players can rename; blocked words and NPC names are rejected', () => {
+  const room = start();
+  const renamed = execute(room, { action: 'rename', id: 'person-0', text: 'Willow' }, 7000);
+  assert.equal(renamed.error, undefined);
+  assert.equal(renamed.state.you.name, 'Willow');
+  assert.equal(room.seats.find(s => s.owner === 'person-0').name, 'Willow');
+  const slur = execute(room, { action: 'rename', id: 'person-0', text: 'nazi' }, 7001);
+  assert.ok(slur.error);
+  assert.equal(room.members['person-0'].name, 'Willow');
+  const taken = execute(room, { action: 'rename', id: 'person-0', text: 'Pip' }, 7002);
+  assert.ok(taken.error);
+  assert.throws(() => enter(room, 'intruder', 'nigger', 7003));
+});
+
+test('moderation keywords stay in sync with the csv list', () => {
+  const csv = readFileSync('lib/moderation/moderation_keywords.csv', 'utf8').split(/\r?\n/).map(line => line.trim().toLowerCase()).filter(Boolean);
+  assert.deepEqual(MODERATION_KEYWORDS, csv);
+  assert.equal(blockedName('Willow'), false);
+  assert.equal(blockedName('nazi'), true);
+  assert.equal(blockedName('xxN1ggerxx'), true);
+  assert.equal(blockedName('Jasper'), false);
+});
+
+test('overdue feedback advances once instead of renewing its deadline', () => {
+  for (const paused of [false, true]) {
+    const room = start(2); pass(room);
+    const scores = room.seats.map(s => s.total);
+    const history = structuredClone(room.history);
+    const now = room.deadline + 60_000;
+    if (paused) room.pausedAt = room.deadline - 1;
+    heartbeat(room, 'person-1', now);
+    const result = execute(room, { action: 'sync', id: 'person-0' }, now);
+    assert.equal(result.state.phase, 'dialogue');
+    assert.equal(result.state.turn, 1);
+    assert.equal(room.deadline, now + TURN_MS);
+    assert.equal(room.pausedAt, null);
+    assert.deepEqual(room.seats.map(s => s.total), scores);
+    assert.deepEqual(room.history, history);
+    execute(room, { action: 'sync', id: 'person-1' }, now);
+    assert.equal(room.turn, 1);
+    assert.equal(room.deadline, now + TURN_MS);
+  }
+});
+
+test('overdue final feedback reveals the winner instead of repeating feedback', () => {
+  const room = start(2);
+  for (let turn = 0; turn < TURN_COUNT; turn++) {
+    pass(room);
+    if (turn < TURN_COUNT - 1) tick(room, room.deadline);
+  }
+  const now = room.deadline + 60_000;
+  tick(room, now);
+  assert.equal(room.phase, 'reveal');
+  assert.ok(room.winner);
+  assert.ok(room.deadline > now);
+});
+
+test('a very late evaluation poll still falls back instead of extending the job', () => {
+  const room = start();
+  const result = execute(room, { action: 'say', id: 'person-0', key: turnKey(room), text: 'A tiny umbrella.', live: true }, room.turnStartedAt + 1);
+  assert.ok(result.evaluation);
+  const recovered = execute(room, { action: 'sync', id: 'person-0', live: true }, room.deadline + 60_000);
+  assert.equal(recovered.state.phase, 'results');
+  assert.equal(room.evaluation, null);
+});
+
+test('a genuinely paused answer timer restarts when players return', () => {
+  const room = start(2);
+  const expired = room.deadline;
+  advance(room, expired + PRESENCE_MS);
+  assert.notEqual(room.pausedAt, null);
+  const now = expired + 60_000;
+  tick(room, now);
+  assert.equal(room.phase, 'dialogue');
+  assert.equal(room.deadline, now + TURN_MS);
+  assert.equal(room.pausedAt, null);
 });

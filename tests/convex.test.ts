@@ -121,12 +121,24 @@ test("pending and completed AI evaluations are saved without double counting", a
   expect(record.scoreEvolution[0].after).toBe(81);
 });
 
+test("a seated player can rename, and blocked names are rejected", async () => {
+  await sync();
+  const renamed = await send({ action: "rename", id: "player", text: "Willow" });
+  expect(renamed.error).toBeUndefined();
+  expect(renamed.state.you?.name).toBe("Willow");
+  const denied = await send({ action: "rename", id: "player", text: "nazi" });
+  expect(denied.error).toBeDefined();
+  expect((await sync()).you?.name).toBe("Willow");
+});
+
 test("separate browser sessions share one lobby and keep their own names and seats", async () => {
   const first = await sync("one");
   const second = await sync("two");
   expect(second.id).toBe(first.id);
   expect(second.you?.name).not.toBe(first.you?.name);
   expect(second.you?.seatId).not.toBe(first.you?.seatId);
+  expect(second.seats.filter((s: { kind: string }) => s.kind === "npc")).toHaveLength(4);
+  expect(second.seats.filter((s: { kind: string }) => s.kind === "human")).toHaveLength(2);
   expect((await sync("one")).you?.seatId).toBe(first.you?.seatId);
   expect(await db.run(ctx => ctx.db.query("lobbies").collect())).toHaveLength(1);
 });
@@ -166,7 +178,7 @@ for (const malformed of [false, true]) test(`one HTTP model request per round, m
   const modelFetch = vi.fn(async (_url: unknown, init: RequestInit) => {
     const request = JSON.parse(init.body as string);
     const input = JSON.parse(request.messages[1].content);
-    expect(input.suitors).toHaveLength(4);
+    expect(input.suitors).toHaveLength(6);
     expect(input.suitors.filter((s: { npc: boolean }) => !s.npc)).toHaveLength(2);
     expect(input.privatePreferences).toBeTruthy();
     const evaluations = input.suitors.map((s: { seatId: string }) => ({ seatId: s.seatId, text: "An invented answer", reply: "Keep the moon.", feedback: "Strange and sweet.", score: 81 }));
@@ -247,7 +259,7 @@ test("concurrent Next clicks advance only the result both players saw", async ()
   expect((await send({ ...command, id: "one", key: "old-turn", speakerId: after.speakerId! })).state.speakerId).toBe(after.speakerId);
 });
 
-test("two browser cookies claim distinct NPC seats even when both opened before Enter", async () => {
+test("two browser cookies claim distinct seats even when both opened before Enter", async () => {
   const { NextRequest } = await import("next/server");
   const { GET, POST } = await import("../app/api/lobby/route");
   const url = "http://localhost:3107/api/lobby";
@@ -267,6 +279,7 @@ test("two browser cookies claim distinct NPC seats even when both opened before 
   expect(states[0].you.seatId).not.toBe(states[1].you.seatId);
   expect(states[0].you.name).not.toBe(states[1].you.name);
   expect(states[1].seats.filter((s: { kind: string }) => s.kind === "human")).toHaveLength(2);
+  expect(states[1].seats.filter((s: { kind: string }) => s.kind === "npc")).toHaveLength(4);
   for (let i = 0; i < 2; i++) {
     const refreshed = await (await GET(new NextRequest(url, { headers: { cookie: browsers[i] } }))).json();
     expect(refreshed.you.seatId).toBe(states[i].you.seatId);

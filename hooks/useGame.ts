@@ -20,7 +20,6 @@ export function useGame(lobbyId?: string) {
     clockOffset.current = next.serverNow - Date.now();
     setState(previous => previous && (previous.serverNow > next.serverNow || (previous.id === next.id && previous.revision > next.revision)) ? previous : next);
     setConnected(true);
-    setError("");
   }, []);
 
   useEffect(() => {
@@ -50,7 +49,7 @@ export function useGame(lobbyId?: string) {
     return () => { controller.abort(); clearTimeout(timer); clearInterval(clock); };
   }, [receive, endpoint]);
 
-  const act = useCallback(async (action: "start" | "say" | "create" | "next" | "reset" | "enter" | "configure", text = "", settings?: LobbyOptions) => {
+  const act = useCallback(async (action: "start" | "say" | "create" | "next" | "reset" | "enter" | "rename" | "configure", text = "", settings?: LobbyOptions) => {
     if (sending.current) return false;
     sending.current = true; setBusy(true); setError("");
     try {
@@ -76,6 +75,7 @@ export function useGame(lobbyId?: string) {
     next: () => act("next"),
     reset: () => act("reset"),
     enter: () => act("enter"),
+    rename: (name: string) => act("rename", name),
     start: () => act("start"),
     configure: (settings: LobbyOptions) => act("configure", "", settings),
   };

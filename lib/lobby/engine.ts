@@ -7,15 +7,16 @@ const randomInt = (length: number) => Math.floor(Math.random() * length);
 import { interpretShortPreferences, starterPreferences, validPreferences } from "./preferences";
 import type { Preferences } from "./types";
 import { scriptedDialogue } from "./dialogue";
-import { CREATE_MS, FEEDBACK_MS, MESSAGE_LIMIT, PRESENCE_MS, REVEAL_MS, TURN_COUNT, TURN_MS, NPC_CREATE_MS, NPC_NAMES, NPC_PREFERENCES, PLAYER_NOUNS, NAME_LIMIT, courtSize } from "./settings";
-import type { Room, RoomView } from "./types";
+import { blockedName } from "./moderation";
+import { CREATE_MS, FEEDBACK_MS, MESSAGE_LIMIT, PRESENCE_MS, REVEAL_MS, TURN_COUNT, TURN_MS, NPC_CREATE_MS, NPC_COUNT, NPC_NAMES, NPC_PREFERENCES, PLAYER_NOUNS, NAME_LIMIT, courtSize } from "./settings";
+import type { Room, RoomView, Seat } from "./types";
 
 export function createRoom(capacity = 5, winnerSitsOut = false, ownerId: string | null = null): Room {
   return {
     minPlayers: null, maxPlayers: null, timersEnabled: true,
     capacity, winnerSitsOut, ownerId, advisorId: null,
     version: 1, id: randomUUID(), revision: 0, reign: 1, turn: 0, phase: "lobby", speaker: 0, deadline: null, turnStartedAt: 0,
-    seats: NPC_NAMES.slice(0, courtSize(0, capacity)).map((npcName, i) => ({ id: `seat-${i}`, npcName, name: npcName, owner: null, total: 0 })),
+    seats: NPC_NAMES.slice(0, NPC_COUNT).map((npcName, i) => ({ id: `seat-${i}`, npcName, name: npcName, owner: null, total: 0 })),
     members: {}, preferences: starterPreferences(), lastRevealedPreference: null, creator: { name: "The founding council", memberId: null }, winner: null,
     submissions: {}, history: [], evaluation: null, creationPending: false, creationId: null, pausedAt: null
   };
@@ -25,45 +26,86 @@ export class LobbyError extends Error {
   constructor(message: string, public status = 400) { super(message); }
 }
 const touch = (room: Room) => { room.revision++; };
+function npcCount(room: Room) {
+  return room.seats.filter(seat => !seat.owner).length;
+}
+function addSeat(room: Room): Seat {
+  const used = new Set(room.seats.map(seat => seat.id));
+  let index = 0;
+  while (used.has(`seat-${index}`)) index++;
+  const npcName = NPC_NAMES[index % NPC_NAMES.length];
+  const seat = { id: `seat-${index}`, npcName, name: npcName, owner: null, total: 0 };
+  room.seats.push(seat);
+  touch(room);
+  return seat;
+}
+function removeSeat(room: Room, index: number) {
+  const removed = room.seats.splice(index, 1)[0];
+  if (!removed) return;
+  delete room.submissions[removed.id];
+  for (const turn of room.history) delete turn[removed.id];
+  if (room.speaker >= room.seats.length) room.speaker = Math.max(0, room.seats.length - 1);
+  touch(room);
+}
+function extraEmptySeat(room: Room) {
+  if (npcCount(room) <= NPC_COUNT) return;
+  return [...room.seats].reverse().find(seat => !seat.owner && !(room.winner?.seatId === seat.id && ["reveal", "creating"].includes(room.phase)));
+}
 function fitCourt(room: Room, now: number) {
   const humans = Object.entries(room.members).filter(([id, member]) => id !== room.advisorId && member.entered !== false && now - member.lastSeen <= PRESENCE_MS).length;
   const size = courtSize(humans, room.capacity ?? 5);
-  while (room.seats.length < size && room.seats.length < NPC_NAMES.length) {
-    const index = room.seats.length;
-    room.seats.push({ id: `seat-${index}`, npcName: NPC_NAMES[index], name: NPC_NAMES[index], owner: null, total: 0 });
-    touch(room);
+  const canGrow = ["lobby", "dialogue"].includes(room.phase);
+  const canShrink = room.phase === "lobby" || (room.phase === "dialogue" && Object.keys(room.submissions).length === 0);
+  if (canGrow) {
+    while (room.seats.length < size) addSeat(room);
+    while (npcCount(room) < NPC_COUNT) addSeat(room);
   }
-  while (room.seats.length > size && !room.seats[room.seats.length - 1].owner) {
-    const removed = room.seats.pop();
-    if (!removed) break;
-    delete room.submissions[removed.id];
-    for (const turn of room.history) delete turn[removed.id];
-    if (room.speaker >= room.seats.length) room.speaker = Math.max(0, room.seats.length - 1);
-    touch(room);
+  if (!canShrink) return;
+  for (let index = room.seats.length - 1; index >= 0 && room.seats.length > size && npcCount(room) > NPC_COUNT; index--) {
+    if (!room.seats[index].owner) removeSeat(room, index);
   }
 }
 function assignSeats(room: Room, now: number) {
-  // Keep the evaluation roster fixed, but allow humans to inherit existing NPC seats.
-  if (["lobby", "dialogue"].includes(room.phase)) fitCourt(room, now);
+  const canGrow = ["lobby", "dialogue"].includes(room.phase);
+  if (canGrow) fitCourt(room, now);
+  const capacity = room.capacity ?? 5;
   for (const [id, member] of Object.entries(room.members).sort((a, b) => a[1].joinedAt - b[1].joinedAt)) {
     if (id === room.advisorId || member.entered === false || member.seatId || (member.misses ?? 0) >= 2 || now - member.lastSeen > PRESENCE_MS) continue;
-    const seat = room.seats.find(s => !s.owner && !(room.winner?.seatId === s.id && ["reveal", "creating"].includes(room.phase)));
+    if (room.seats.filter(seat => seat.owner).length >= capacity) continue;
+    let seat = extraEmptySeat(room);
+    if (!seat && canGrow) seat = addSeat(room);
     if (!seat) continue;
     seat.owner = id; seat.name = member.name; member.seatId = seat.id; member.entered = true;
     // An unjudged NPC answer must not prevent its new human from answering.
     if (room.phase === "dialogue" && room.submissions[seat.id]?.by === null) delete room.submissions[seat.id];
     touch(room);
   }
+  if (canGrow) fitCourt(room, now);
 }
-export function join(room: Room, id: string, rawName: unknown, now: number) {
+function validatedName(room: Room, id: string, rawName: unknown, now: number) {
   if (typeof rawName !== "string" || !rawName.trim() || rawName.trim().length > NAME_LIMIT) throw new LobbyError(`Use a name of 1–${NAME_LIMIT} characters.`);
   const name = rawName.trim();
+  if (blockedName(name)) throw new LobbyError("Choose a different name.");
   if (Object.entries(room.members).some(([key, m]) => key !== id && now - m.lastSeen <= PRESENCE_MS && m.name.toLowerCase() === name.toLowerCase())) throw new LobbyError("That name is already at court. Try another.", 409);
+  if (room.seats.some(seat => seat.owner !== id && seat.name.toLowerCase() === name.toLowerCase())) throw new LobbyError("That name is already at court. Try another.", 409);
+  return name;
+}
+export function join(room: Room, id: string, rawName: unknown, now: number) {
+  const name = validatedName(room, id, rawName, now);
   const previous = room.members[id];
   room.members[id] = { name, lastSeen: now, joinedAt: previous?.joinedAt ?? now, seatId: previous?.seatId ?? null, entered: previous?.entered ?? room.phase !== "lobby", ...(previous?.misses ? { misses: previous.misses } : {}) };
   const seat = room.seats.find(s => s.owner === id);
   if (seat) seat.name = name;
   assignSeats(room, now);
+  touch(room);
+}
+export function setName(room: Room, id: string, rawName: unknown, now: number) {
+  const member = room.members[id];
+  if (!member || now - member.lastSeen > PRESENCE_MS) throw new LobbyError("Join the court first.", 401);
+  const name = validatedName(room, id, rawName, now);
+  member.name = name;
+  const seat = room.seats.find(s => s.owner === id);
+  if (seat) seat.name = name;
   touch(room);
 }
 export function heartbeat(room: Room, id: string | null, now: number) {
@@ -222,12 +264,10 @@ export function advance(room: Room, now: number) {
     if (room.pausedAt == null) { room.pausedAt = now; touch(room); }
     return;
   }
-  if (room.deadline != null && now - room.deadline > phaseSpan(room)) {
-    room.deadline = now + phaseSpan(room);
-    room.pausedAt = null;
-    touch(room);
-  } else if (room.pausedAt != null) {
-    if (room.deadline != null && room.deadline <= now) room.deadline = now + phaseSpan(room);
+  if (room.pausedAt != null) {
+    // Only input phases need fresh time after an empty court resumes.
+    // Overdue feedback, reveals, and AI jobs must reach their transitions below.
+    if (["dialogue", "creating"].includes(room.phase) && room.deadline != null && room.deadline <= now) room.deadline = now + phaseSpan(room);
     room.pausedAt = null;
     touch(room);
   }

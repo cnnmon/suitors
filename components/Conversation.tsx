@@ -9,6 +9,7 @@ import {
   PREFERENCE_EDIT_LIMIT,
   CREATE_MS,
   TURN_COUNT,
+  NPC_COUNT,
 } from "@/lib/lobby/settings";
 
 // One panel, one input. No local game phases or duplicated game state.
@@ -59,7 +60,7 @@ export function Conversation({ game }: { game: GameController }) {
           : me.role === "advisor"
             ? "You’re watching this contest. You’ll rejoin the next one."
             : me.role === "spectator"
-              ? "You’ll automatically take the next available NPC seat."
+              ? "You’ll join as another suitor when a seat opens."
               : state.thinking && speaker && !speaker.line
                 ? `${speaker.name} is thinking…`
                 : dialogue?.pending || state.thinking
@@ -169,9 +170,9 @@ export function Conversation({ game }: { game: GameController }) {
                 : "Send →"}
           </button>
         </form>
-      ) : me?.role === "spectator" && state.seats.some(s => s.kind === "npc" && !(state.winner?.seatId === s.id && ["reveal", "creating"].includes(state.phase))) ? (
+      ) : me?.role === "spectator" && state.seats.filter(s => s.kind === "human").length < state.capacity && (state.seats.filter(s => s.kind === "npc").length > NPC_COUNT || ["lobby", "dialogue"].includes(state.phase)) ? (
         <button className="mt-1 w-fit border-2 border-ink bg-ink px-4 py-2 text-paper" type="button" disabled={busy || !connected} onClick={() => void game.enter()}>
-          {busy ? "…" : "Take an NPC seat →"}
+          {busy ? "…" : "Join the court →"}
         </button>
       ) : canAdvance || manualAdvance ? (
         <button

@@ -1,11 +1,11 @@
-import { startCourt, closeIfAdminAbsent, continueUntimed, setTimers, advance, ensureJoined, enterCourt, heartbeat, LobbyError, nextPrincess, nextSpeaker, resetCourt, submit, turnKey, view } from "./engine";
+import { startCourt, closeIfAdminAbsent, continueUntimed, setTimers, advance, ensureJoined, enterCourt, heartbeat, LobbyError, nextPrincess, nextSpeaker, resetCourt, setName, submit, turnKey, view } from "./engine";
 import { claimRound, finishRound, type Evaluation, type RoundJob } from "./round";
 import { preferenceEdits } from "./preferenceEdits";
 import { PREFERENCE_LIMIT, PREFERENCE_EDIT_LIMIT } from "./settings";
 import type { Preferences, Room, RoomView } from "./types";
 
 export type Command = {
-  action: "start" | "configure" | "sync" | "say" | "next" | "reset" | "enter" | "create" | "finishRound" | "finishCreation";
+  action: "start" | "configure" | "sync" | "say" | "next" | "reset" | "enter" | "rename" | "create" | "finishRound" | "finishCreation";
   phase?: string; minPlayers?: number | null; maxPlayers?: number | null; timersEnabled?: boolean;
   lobbyId?: string; capacity?: number; winnerSitsOut?: boolean;
   id: string; key?: string; text?: string; live?: boolean; speakerId?: string;
@@ -51,6 +51,7 @@ export function execute(room: Room, command: Command, now: number): CommandResul
     if (action === "start") startCourt(room, id, now);
     if (action === "reset") resetCourt(room, id, now);
     if (action === "enter") enterCourt(room, id, now);
+    if (action === "rename") setName(room, id, command.text, now);
     // Ignore duplicate or stale clicks from another tab viewing the same result.
     if (action === "next" && room.phase === "results" && command.key === turnKey(room) && command.speakerId === room.seats[room.speaker]?.id) nextSpeaker(room, id, now);
     if (action === "next" && room.timersEnabled === false && command.key === turnKey(room) && command.phase === room.phase) continueUntimed(room, now);

@@ -33,7 +33,7 @@ async function archive(ctx: MutationCtx, room: Room, now: number, reset = false)
 // is readable directly from a browser, even if someone knows the deployment URL.
 export const dispatch = mutation({
   args: { secret: v.string(), command: v.object({
-    action: v.union(v.literal("start"),v.literal("configure"), v.literal("sync"), v.literal("say"), v.literal("next"), v.literal("reset"), v.literal("enter"), v.literal("create"), v.literal("finishRound"), v.literal("finishCreation")),
+    action: v.union(v.literal("start"),v.literal("configure"), v.literal("sync"), v.literal("say"), v.literal("next"), v.literal("reset"), v.literal("enter"), v.literal("rename"), v.literal("create"), v.literal("finishRound"), v.literal("finishCreation")),
     phase: v.optional(v.string()), minPlayers: v.optional(v.union(v.number(), v.null())), maxPlayers: v.optional(v.union(v.number(), v.null())), timersEnabled: v.optional(v.boolean()),
     lobbyId: v.optional(v.string()), capacity: v.optional(v.number()), winnerSitsOut: v.optional(v.boolean()),
     id: v.string(), key: v.optional(v.string()), speakerId: v.optional(v.string()), text: v.optional(v.string()), live: v.optional(v.boolean()),

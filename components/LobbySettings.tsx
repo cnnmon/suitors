@@ -65,8 +65,7 @@ export function LobbySettings({
         </h2>
         {!onSave && (
           <p className="m-0">
-            Create a separate game and invite friends with its link. Empty seats
-            are played by NPCs. You are the admin: start when ready, and keep this tab open. The lobby closes if you disconnect for 25 seconds.
+            Create a separate game and invite friends with its link. Four NPCs always play; friends who join sit as extra suitors. You are the admin: start when ready, and keep this tab open. The lobby closes if you disconnect for 25 seconds.
           </p>
         )}
         <fieldset className="grid grid-cols-2 gap-3 border-0 p-0">

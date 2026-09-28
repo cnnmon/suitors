@@ -7,9 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test tests/*.test.mjs && vitest run",
-    "typecheck": "tsc --noEmit --incremental false",
-    "convex:dev": "convex dev",
+    "test": "node scripts/build-moderation-keywords.mjs && node --test tests/*.test.mjs && vitest run",
+    "typecheck": "node scripts/build-moderation-keywords.mjs && tsc --noEmit --incremental false",
+    "convex:dev": "node scripts/build-moderation-keywords.mjs && convex dev",
     "db:migrate": "node scripts/migrate-lobby.mjs"
   },
   "dependencies": {

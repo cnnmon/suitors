@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
     if (raw.length > 2000) throw new LobbyError("That message is too long.", 413);
     let body: { action?: unknown; text?: unknown; turnKey?: unknown; speakerId?: unknown; capacity?: unknown; winnerSitsOut?: unknown; minPlayers?: unknown; maxPlayers?: unknown; timersEnabled?: unknown; phase?: unknown };
     try { body = JSON.parse(raw); } catch { throw new LobbyError("Invalid request."); }
-    if (!body || typeof body !== "object" || !["start", "newLobby", "configure", "say", "next", "reset", "enter", "create"].includes(String(body.action))) throw new LobbyError("Unknown action.");
+    if (!body || typeof body !== "object" || !["start", "newLobby", "configure", "say", "next", "reset", "enter", "rename", "create"].includes(String(body.action))) throw new LobbyError("Unknown action.");
     if (body.text !== undefined && typeof body.text !== "string") throw new LobbyError("Invalid answer.");
     if (body.turnKey !== undefined && typeof body.turnKey !== "string") throw new LobbyError("Invalid turn.");
     if (body.speakerId !== undefined && typeof body.speakerId !== "string") throw new LobbyError("Invalid result.");

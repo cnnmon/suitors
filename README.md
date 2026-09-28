@@ -40,10 +40,10 @@ Clients connect through the Next.js server, while Convex stores and atomically u
 
 ## Game rules
 
-- Solo players face **3 NPCs**.
-- Multiplayer keeps up to **2 NPCs**, with up to **5 seats** in the shared court.
+- The court always has **4 NPCs**. Humans who join sit as extra suitors and do not replace them.
+- Shared court holds up to **5 humans**. Private lobbies can hold up to **15**.
 - Solo turns have no deadline; multiplayer human turns have **30 seconds**.
-- Missing two rounds replaces that human with an NPC for the rest of the reign.
+- Missing two rounds unseats that human for the rest of the reign.
 - Winner tiebreaks: total score → final-round score → seat order.
 - The liking bar is separate from total score and weights later rounds more heavily.
 
@@ -71,13 +71,14 @@ This imports the previous `.suitors/lobby.json` save once without overwriting an
 
 ## Invite lobbies
 
-Private courts get their own `/l/<id>` invite URL. The creator is the admin and controls when the game starts, player limits, timers, and succession settings. Empty seats are filled by NPCs.
+Private courts get their own `/l/<id>` invite URL. The creator is the admin and controls when the game starts, player limits, timers, and succession settings. Empty seats are filled by four NPCs; additional humans sit beside them.
 
 The admin must keep the lobby open. If no admin heartbeat is received for 25 seconds, the lobby closes permanently, though archived rounds remain stored.
 
 ## Key files
 
 - `lib/lobby/settings.ts` — timers, limits, NPC counts, names
+- `lib/lobby/moderation.ts` — blocked names, loaded from the gitignored `lib/moderation/moderation_keywords.csv`
 - `lib/lobby/prompts.ts` — questions and fallback dialogue
 - `lib/lobby/engine.ts` — game rules
 - `lib/lobby/commands.ts` — actions and AI requests
