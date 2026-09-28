@@ -40,7 +40,19 @@ function Sign({
   );
 }
 
-export function Stage({ state, now, onRename, busy = false, error = "" }: { state: RoomView; now: number; onRename?: (name: string) => Promise<boolean>; busy?: boolean; error?: string }) {
+export function Stage({
+  state,
+  now,
+  onRename,
+  busy = false,
+  error = "",
+}: {
+  state: RoomView;
+  now: number;
+  onRename?: (name: string) => Promise<boolean>;
+  busy?: boolean;
+  error?: string;
+}) {
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(state.you?.name ?? "");
   const sign = responseSign(
@@ -88,18 +100,10 @@ export function Stage({ state, now, onRename, busy = false, error = "" }: { stat
   }
 
   return (
-    <section
-      className="grid h-full w-full min-h-0"
-      aria-label="The shared court"
-    >
-      <div className="grid items-end gap-2 grid-cols-[minmax(0,1fr)_22%]">
+    <section className="grid h-full w-full" aria-label="The shared court">
+      <div className="flex items-center justify-center">
         <motion.div
-          className="grid h-full w-full min-w-0 items-end justify-self-center"
-          style={{
-            gridTemplateColumns: `repeat(${Math.min(5, state.seats.length)}, minmax(0, 1fr))`,
-            height: dense ? "auto" : undefined,
-            rowGap: dense ? 12 : undefined,
-          }}
+          className="w-full overflow-y-scroll flex justify-center items-center h-full"
           initial={false}
           animate={{ maxWidth: spread || dense ? "100%" : "62%" }}
           transition={spring}
@@ -142,11 +146,7 @@ export function Stage({ state, now, onRename, busy = false, error = "" }: { stat
                     />
                   </div>
                   <div
-                    className={
-                      dense
-                        ? "relative flex h-20 w-20"
-                        : "relative h-50 flex w-50"
-                    }
+                    className="relative flex h-50 w-30"
                     style={{
                       zIndex: index + 1,
                     }}
@@ -155,7 +155,6 @@ export function Stage({ state, now, onRename, busy = false, error = "" }: { stat
                       className={twMerge(
                         "absolute bottom-0 block h-50 w-auto max-w-none select-none",
                         pixel,
-                        dense && "h-20",
                         index === 0
                           ? "left-0"
                           : index === last
@@ -181,9 +180,11 @@ export function Stage({ state, now, onRename, busy = false, error = "" }: { stat
                   {yours && renaming && onRename ? (
                     <form
                       className="flex min-w-0 flex-col items-stretch gap-1"
-                      onSubmit={e => {
+                      onSubmit={(e) => {
                         e.preventDefault();
-                        void onRename(draft).then(ok => { if (ok) setRenaming(false); });
+                        void onRename(draft).then((ok) => {
+                          if (ok) setRenaming(false);
+                        });
                       }}
                     >
                       <input
@@ -193,18 +194,18 @@ export function Stage({ state, now, onRename, busy = false, error = "" }: { stat
                         maxLength={NAME_LIMIT}
                         autoFocus
                         disabled={busy}
-                        onChange={e => setDraft(e.target.value)}
-                        onKeyDown={e => {
+                        onChange={(e) => setDraft(e.target.value)}
+                        onKeyDown={(e) => {
                           if (e.key === "Escape") setRenaming(false);
                           if (e.key === "Enter") {
                             e.preventDefault();
-                            void onRename(draft).then(ok => { if (ok) setRenaming(false); });
+                            void onRename(draft).then((ok) => {
+                              if (ok) setRenaming(false);
+                            });
                           }
                         }}
                       />
-                      {error && (
-                        <span role="alert">{error}</span>
-                      )}
+                      {error && <span role="alert">{error}</span>}
                     </form>
                   ) : (
                     <span className="flex min-w-0 items-center justify-center gap-1">
@@ -218,10 +219,21 @@ export function Stage({ state, now, onRename, busy = false, error = "" }: { stat
                           className="shrink-0"
                           aria-label="Change your name"
                           disabled={busy}
-                          onClick={() => { setDraft(seat.name); setRenaming(true); }}
+                          onClick={() => {
+                            setDraft(seat.name);
+                            setRenaming(true);
+                          }}
                         >
-                          <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-                            <path fill="currentColor" d="M11.6 1.4a1.4 1.4 0 0 1 2 2L5.5 11.5 2 12.8l1.3-3.5 8.3-7.9zM3.7 10.2 3.1 12l1.8-.6 7.6-7.6-1.2-1.2-7.6 7.6z" />
+                          <svg
+                            viewBox="0 0 16 16"
+                            width="12"
+                            height="12"
+                            aria-hidden="true"
+                          >
+                            <path
+                              fill="currentColor"
+                              d="M11.6 1.4a1.4 1.4 0 0 1 2 2L5.5 11.5 2 12.8l1.3-3.5 8.3-7.9zM3.7 10.2 3.1 12l1.8-.6 7.6-7.6-1.2-1.2-7.6 7.6z"
+                            />
                           </svg>
                         </button>
                       )}
@@ -235,7 +247,7 @@ export function Stage({ state, now, onRename, busy = false, error = "" }: { stat
         <div className="relative h-full min-h-0 w-full absolute top-[-80px]">
           <img
             className={twMerge(
-              "pointer-events-none absolute bottom-[0] left-[-50px] z-[1] h-30 w-auto max-w-none",
+              "pointer-events-none absolute bottom-[0] right-[190px] -translate-x-1/2 z-[2] h-30 w-auto max-w-none",
               pixel,
             )}
             src="/art/kitty.png"
