@@ -1,6 +1,6 @@
 # The Suitors and the AI Princess
 
-<img width="974" height="593" alt="image" src="https://github.com/user-attachments/assets/097eba79-7f3e-4cbe-8bd9-e99a19117c71" />
+<img width="1138" height="632" alt="image" src="https://github.com/user-attachments/assets/6b479496-b06c-475d-85eb-8b940816676f" />
 
 ## How it works
 
