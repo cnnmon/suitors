@@ -232,13 +232,19 @@ export function Game({ lobbyId }: { lobbyId?: string }) {
     );
   }
 
-  if (state.closedAt != null) return (
-    <main className={twMerge(frame, "grid place-content-center gap-4 bg-paper p-8 text-center")}>
-      <h1 className="font-display text-2xl">This lobby has closed</h1>
-      <p>The admin disconnected. This invite link is no longer active.</p>
-      <a href="/">Return to the public court →</a>
-    </main>
-  );
+  if (state.closedAt != null)
+    return (
+      <main
+        className={twMerge(
+          frame,
+          "grid place-content-center gap-4 bg-paper p-8 text-center",
+        )}
+      >
+        <h1 className="font-display text-2xl">This lobby has closed</h1>
+        <p>The admin disconnected. This invite link is no longer active.</p>
+        <a href="/">Return to the public court →</a>
+      </main>
+    );
 
   return (
     <main
@@ -314,11 +320,17 @@ export function Game({ lobbyId }: { lobbyId?: string }) {
             "h-full min-h-0 w-[calc(100%-300px)] absolute left-10 top-[-130px]",
           )}
         >
-          <Stage state={state} now={clock} onRename={game.rename} busy={game.busy} error={game.error} />
+          <Stage
+            state={state}
+            now={clock}
+            onRename={game.rename}
+            busy={game.busy}
+            error={game.error}
+          />
         </div>
         {state.log.length ? (
           <aside
-            className="flex overflow-hidden border-2 border-ink bg-paper p-2 w-50 m-4 h-90"
+            className="flex overflow-hidden border-2 border-ink bg-paper p-2 w-50 m-4 z-[3] h-90"
             aria-label="Court history"
           >
             <ol className="m-0 min-h-0 list-none overflow-auto p-0">
