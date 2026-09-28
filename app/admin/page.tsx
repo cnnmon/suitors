@@ -19,7 +19,10 @@ export default function AdminPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password, action: "reset" }),
       });
-      const body = await response.json() as { error?: string; humans?: number; phase?: string };
+      const raw = await response.text();
+      let body: { error?: string; humans?: number; phase?: string };
+      try { body = raw ? JSON.parse(raw) : {}; }
+      catch { throw new Error("Admin reset is not available on this server."); }
       if (!response.ok) throw new Error(body.error || "The court could not be reset.");
       const humans = body.humans ?? 0;
       setMessage(humans > 0

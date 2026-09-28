@@ -33,6 +33,25 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 const wait = (ms: number) => { now += ms; vi.setSystemTime(now); };
 
+test("saved browser names survive the HTTP-to-Convex join and heartbeat flow", async () => {
+  const { NextRequest } = await import("next/server");
+  const { GET, POST } = await import("../app/api/lobby/route");
+  const url = "http://localhost:3107/api/lobby";
+  const response = await GET(new NextRequest(url, { headers: { "x-suitor-name": "Comet" } }));
+  expect(response.status).toBe(200);
+  expect((await response.json()).you.name).toBe("Comet");
+  const cookie = response.headers.get("set-cookie")!.split(";")[0];
+  const entered = await POST(new NextRequest(url, {
+    method: "POST", headers: { cookie }, body: JSON.stringify({ action: "enter" }),
+  }));
+  expect(entered.status).toBe(200);
+  expect((await entered.json()).you.role).toBe("suitor");
+  const heartbeat = await GET(new NextRequest(`${url}?presence=1`, {
+    headers: { cookie, "x-suitor-name": "Comet" },
+  }));
+  expect(heartbeat.status).toBe(204);
+});
+
 test("full game archives answers, evaluations and score evolution across succession and reset", async () => {
   let state = await sync();
   const gameId = state.id;
@@ -404,6 +423,7 @@ test("exit lobby frees a guest and closes when the admin leaves", async () => {
 });
 
 test("admin password restarts the public court for players still present", async () => {
+  vi.stubEnv("ADMIN_PASSWORD", "uwu");
   const { NextRequest } = await import("next/server");
   const { POST } = await import("../app/api/admin/route");
   const url = "http://localhost:3107/api/admin";

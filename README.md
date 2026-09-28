@@ -27,6 +27,8 @@ npx convex env set SUITORS_SERVER_SECRET
 
 Set the same `SUITORS_SERVER_SECRET` in `.env.local`. Keep it server-only; never prefix it with `NEXT_PUBLIC_`.
 
+Set `ADMIN_PASSWORD` in `.env.local` and on Vercel. `/admin` checks that server-only value.
+
 Blocked display names come from `MODERATION_KEYWORDS`, a comma-separated list in `.env.local`. Name checks run inside Convex, so set the same value on the deployment:
 
 ```sh
@@ -84,7 +86,7 @@ The admin must keep the lobby open. If no admin heartbeat is received for 25 sec
 
 ## Admin reset
 
-`/admin` restarts the public court. Players who still have the page open reload and rejoin under the same name. The reign starts over at turn 1 when they enter. Anyone quiet for 25 seconds is dropped and rejoins fresh. The password is checked only in `app/api/admin/route.ts`.
+`/admin` restarts the public court. Players who still have the page open reload and rejoin under the same name. The reign starts over at turn 1 when they enter. Anyone quiet for 25 seconds is dropped and rejoins fresh. The password is `ADMIN_PASSWORD`.
 
 ## Key files
 
