@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LobbyOptions } from "@/lib/lobby/options";
 import { watchCourt } from "@/lib/lobby/realtime";
+import { rememberName } from "@/lib/lobby/savedName";
 import type { RoomView } from "@/lib/lobby/types";
 
 // The only browser game-state hook. The server owns phases, seats, and deadlines.
@@ -28,6 +29,10 @@ export function useGame(lobbyId?: string) {
     setState(previous => previous && (previous.serverNow > next.serverNow || (previous.id === next.id && previous.revision > next.revision)) ? previous : next);
     setConnected(true);
   }, []);
+
+  useEffect(() => {
+    if (state?.you?.name) rememberName(state.you.name);
+  }, [state?.you?.name]);
 
   useEffect(() => {
     const stop = watchCourt(endpoint, receive, message => {

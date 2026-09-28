@@ -48,7 +48,8 @@ export async function GET(request: NextRequest) {
   try {
     const token = session(request);
     const id = hash(token);
-    const result = await dispatch({ action: "sync", id, lobbyId: requestedLobby(request), live: !!process.env.OPENAI_API_KEY });
+    const name = request.headers.get("x-suitor-name")?.trim();
+    const result = await dispatch({ action: "sync", id, lobbyId: requestedLobby(request), live: !!process.env.OPENAI_API_KEY, ...(name ? { name } : {}) });
     schedule(result, id, requestedLobby(request));
     return respond(result, token, request, request.nextUrl.searchParams.get("presence") === "1");
   } catch (error) { return errorResponse(error); }

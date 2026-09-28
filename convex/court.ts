@@ -37,7 +37,7 @@ export const dispatch = mutation({
     action: v.union(v.literal("start"),v.literal("configure"), v.literal("sync"), v.literal("say"), v.literal("next"), v.literal("reset"), v.literal("adminReset"), v.literal("enter"), v.literal("rename"), v.literal("create"), v.literal("leave"), v.literal("finishRound"), v.literal("finishCreation")),
     phase: v.optional(v.string()), minPlayers: v.optional(v.union(v.number(), v.null())), maxPlayers: v.optional(v.union(v.number(), v.null())), timersEnabled: v.optional(v.boolean()),
     lobbyId: v.optional(v.string()), capacity: v.optional(v.number()), winnerSitsOut: v.optional(v.boolean()),
-    id: v.string(), key: v.optional(v.string()), speakerId: v.optional(v.string()), text: v.optional(v.string()), live: v.optional(v.boolean()),
+    id: v.string(), key: v.optional(v.string()), speakerId: v.optional(v.string()), text: v.optional(v.string()), name: v.optional(v.string()), live: v.optional(v.boolean()),
     evaluations: v.optional(v.array(v.object({ seatId: v.string(), text: v.string(), reply: v.string(), score: v.number(), feedback: v.string() }))), preferences: v.optional(v.union(preferences, v.null())),
   }) },
   handler: async (ctx, args): Promise<CommandResult> => {

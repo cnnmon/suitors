@@ -27,6 +27,12 @@ npx convex env set SUITORS_SERVER_SECRET
 
 Set the same `SUITORS_SERVER_SECRET` in `.env.local`. Keep it server-only; never prefix it with `NEXT_PUBLIC_`.
 
+Blocked display names come from `MODERATION_KEYWORDS`, a comma-separated list in `.env.local`. Name checks run inside Convex, so set the same value on the deployment:
+
+```sh
+npx convex env set MODERATION_KEYWORDS --from-file keywords.txt
+```
+
 Optional AI settings:
 
 ```sh
@@ -46,6 +52,7 @@ Clients connect through the Next.js server, while Convex stores and atomically u
 - Missing two rounds unseats that human for the rest of the reign.
 - Winner tiebreaks: total score → final-round score → seat order.
 - The liking bar is separate from total score and weights later rounds more heavily.
+- This browser remembers your name and reuses it when you rejoin. A name already seated in this visit stays as it is.
 
 ## Saved data
 
@@ -82,7 +89,7 @@ The admin must keep the lobby open. If no admin heartbeat is received for 25 sec
 ## Key files
 
 - `lib/lobby/settings.ts` — timers, limits, NPC counts, names
-- `lib/lobby/moderation.ts` — blocked names, loaded from the gitignored `lib/moderation/moderation_keywords.csv`
+- `lib/lobby/moderation.ts` — blocked names, read from `MODERATION_KEYWORDS`
 - `lib/lobby/prompts.ts` — questions and fallback dialogue
 - `lib/lobby/engine.ts` — game rules
 - `lib/lobby/commands.ts` — actions and AI requests

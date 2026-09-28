@@ -1,11 +1,9 @@
 "use client";
 
-import { useState } from "react";
 import { motion } from "framer-motion";
 import { twMerge } from "tailwind-merge";
 import { Quote } from "./Quote";
 import { responseSign } from "@/lib/lobby/sign";
-import { NAME_LIMIT } from "@/lib/lobby/settings";
 import type { RoomView } from "@/lib/lobby/types";
 
 const spring = { type: "spring" as const, stiffness: 160, damping: 22 };
@@ -40,21 +38,7 @@ function Sign({
   );
 }
 
-export function Stage({
-  state,
-  now,
-  onRename,
-  busy = false,
-  error = "",
-}: {
-  state: RoomView;
-  now: number;
-  onRename?: (name: string) => Promise<boolean>;
-  busy?: boolean;
-  error?: string;
-}) {
-  const [renaming, setRenaming] = useState(false);
-  const [draft, setDraft] = useState(state.you?.name ?? "");
+export function Stage({ state, now }: { state: RoomView; now: number }) {
   const sign = responseSign(
     state.seats,
     state.phase === "results" ? state.speakerId : null,
@@ -176,68 +160,10 @@ export function Stage({
                   )}
                   title={`${seat.name}, ${seat.total} points`}
                 >
-                  {yours && renaming && onRename ? (
-                    <form
-                      className="flex min-w-0 flex-col items-stretch gap-1"
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        void onRename(draft).then((ok) => {
-                          if (ok) setRenaming(false);
-                        });
-                      }}
-                    >
-                      <input
-                        aria-label="Your name"
-                        className="min-w-0 flex-1 border border-ink bg-[#fff7fc] px-1 text-ink"
-                        value={draft}
-                        maxLength={NAME_LIMIT}
-                        autoFocus
-                        disabled={busy}
-                        onChange={(e) => setDraft(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Escape") setRenaming(false);
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            void onRename(draft).then((ok) => {
-                              if (ok) setRenaming(false);
-                            });
-                          }
-                        }}
-                      />
-                      {error && <span role="alert">{error}</span>}
-                    </form>
-                  ) : (
-                    <span className="flex min-w-0 items-center justify-center gap-1">
-                      <strong className="min-w-0 truncate">
-                        {seat.name}
-                        {yours ? " (You)" : seat.kind === "npc" ? " (NPC)" : ""}
-                      </strong>
-                      {yours && onRename && (
-                        <button
-                          type="button"
-                          className="shrink-0"
-                          aria-label="Change your name"
-                          disabled={busy}
-                          onClick={() => {
-                            setDraft(seat.name);
-                            setRenaming(true);
-                          }}
-                        >
-                          <svg
-                            viewBox="0 0 16 16"
-                            width="12"
-                            height="12"
-                            aria-hidden="true"
-                          >
-                            <path
-                              fill="currentColor"
-                              d="M11.6 1.4a1.4 1.4 0 0 1 2 2L5.5 11.5 2 12.8l1.3-3.5 8.3-7.9zM3.7 10.2 3.1 12l1.8-.6 7.6-7.6-1.2-1.2-7.6 7.6z"
-                            />
-                          </svg>
-                        </button>
-                      )}
-                    </span>
-                  )}
+                  <strong className="block min-w-0 truncate">
+                    {seat.name}
+                    {yours ? " (You)" : seat.kind === "npc" ? " (NPC)" : ""}
+                  </strong>
                 </div>
               </div>
             );

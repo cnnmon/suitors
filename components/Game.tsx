@@ -7,7 +7,7 @@ import type { Lineage } from "@/lib/lobby/lineage";
 import { Conversation } from "./Conversation";
 import { LobbySettings } from "./LobbySettings";
 import { Stage } from "./Stage";
-import { TURN_COUNT, PREFERENCE_EDIT_LIMIT } from "@/lib/lobby/settings";
+import { NAME_LIMIT, TURN_COUNT, PREFERENCE_EDIT_LIMIT } from "@/lib/lobby/settings";
 import { motion } from "framer-motion";
 import React from "react";
 
@@ -201,6 +201,72 @@ function HowToPlay({
   );
 }
 
+function PlayingAs({
+  name,
+  busy,
+  error,
+  onRename,
+}: {
+  name: string;
+  busy: boolean;
+  error: string;
+  onRename: (name: string) => Promise<boolean>;
+}) {
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState(name);
+  return (
+    <p className="m-0 flex items-center gap-1">
+      <span>You're playing as</span>
+      {renaming ? (
+        <form
+          className="flex min-w-0 items-center gap-1"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void onRename(draft).then((ok) => {
+              if (ok) setRenaming(false);
+            });
+          }}
+        >
+          <input
+            aria-label="Your name"
+            className="min-w-0 border border-ink bg-[#fff7fc] px-1 text-ink"
+            value={draft}
+            maxLength={NAME_LIMIT}
+            autoFocus
+            disabled={busy}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setRenaming(false);
+            }}
+          />
+          {error && <span role="alert">{error}</span>}
+        </form>
+      ) : (
+        <>
+          <strong>{name}</strong>
+          <button
+            type="button"
+            className="shrink-0"
+            aria-label="Change your name"
+            disabled={busy}
+            onClick={() => {
+              setDraft(name);
+              setRenaming(true);
+            }}
+          >
+            <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M11.6 1.4a1.4 1.4 0 0 1 2 2L5.5 11.5 2 12.8l1.3-3.5 8.3-7.9zM3.7 10.2 3.1 12l1.8-.6 7.6-7.6-1.2-1.2-7.6 7.6z"
+              />
+            </svg>
+          </button>
+        </>
+      )}
+    </p>
+  );
+}
+
 export function Game({ lobbyId }: { lobbyId?: string }) {
   const game = useGame(lobbyId);
   const { state, clock } = game;
@@ -260,11 +326,21 @@ export function Game({ lobbyId }: { lobbyId?: string }) {
       <div className="w-full bg-paper text-sm flex justify-between p-2 border-b-2">
         {lobbyId ? (
           <>
-            <span>
-              {state.canConfigure ? "Your lobby · Admin" : "Invite lobby"} ·{" "}
-              {state.seats.filter((s) => s.kind === "human").length}/
-              {state.capacity} players
-            </span>
+            <div className="flex items-center gap-3">
+              <span>
+                {state.canConfigure ? "Your lobby · Admin" : "Invite lobby"} ·{" "}
+                {state.seats.filter((s) => s.kind === "human").length}/
+                {state.capacity} players
+              </span>
+              {state.you?.name && (
+                <PlayingAs
+                  name={state.you.name}
+                  busy={game.busy}
+                  error={game.error}
+                  onRename={game.rename}
+                />
+              )}
+            </div>
             <div className="flex items-center gap-2">
               {invite && (
                 <input
@@ -290,11 +366,21 @@ export function Game({ lobbyId }: { lobbyId?: string }) {
           </>
         ) : (
           <>
-            <span>
-              Public court ·{" "}
-              {state.seats.filter((s) => s.kind === "human").length}/
-              {state.capacity} players
-            </span>
+            <div className="flex items-center gap-3">
+              <span>
+                Public court ·{" "}
+                {state.seats.filter((s) => s.kind === "human").length}/
+                {state.capacity} players
+              </span>
+              {state.you?.name && (
+                <PlayingAs
+                  name={state.you.name}
+                  busy={game.busy}
+                  error={game.error}
+                  onRename={game.rename}
+                />
+              )}
+            </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() =>
@@ -338,13 +424,7 @@ export function Game({ lobbyId }: { lobbyId?: string }) {
               "absolute top-[-160px] left-10 z-[2] h-full min-h-0 w-[calc(100%-100px)]",
             )}
           >
-            <Stage
-              state={state}
-              now={clock}
-              onRename={game.rename}
-              busy={game.busy}
-              error={game.error}
-            />
+            <Stage state={state} now={clock} />
           </div>
         </div>
         {/*<div className="flex overflow-hidden border-2 border-ink bg-paper p-2 w-50 m-4 h-90 text-xs z-[2] fixed right-0">

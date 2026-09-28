@@ -8,7 +8,7 @@ export type Command = {
   action: "start" | "configure" | "sync" | "say" | "next" | "reset" | "adminReset" | "enter" | "rename" | "create" | "leave" | "finishRound" | "finishCreation";
   phase?: string; minPlayers?: number | null; maxPlayers?: number | null; timersEnabled?: boolean;
   lobbyId?: string; capacity?: number; winnerSitsOut?: boolean;
-  id: string; key?: string; text?: string; live?: boolean; speakerId?: string;
+  id: string; key?: string; text?: string; name?: string; live?: boolean; speakerId?: string;
   evaluations?: Evaluation[]; preferences?: Preferences | null;
 };
 export type CommandResult = {
@@ -29,7 +29,7 @@ export function execute(room: Room, command: Command, now: number): CommandResul
       return { state: view(room, null, now) };
     }
     if (room.closedAt != null || (Object.keys(room.members).length > 0 && closeIfAdminAbsent(room, now))) return { state: view(room, id, now) };
-    if (action === "sync") ensureJoined(room, id, now);
+    if (action === "sync") ensureJoined(room, id, now, command.name);
     else if (action !== "finishRound" && action !== "finishCreation") heartbeat(room, id, now);
     advance(room, now);
     // A crashed web request cannot leave a suitor waiting forever for AI.

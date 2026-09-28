@@ -350,8 +350,16 @@ function renamePlayer(room: Room, id: string) {
   touch(room);
 }
 // Opening the page seats you; refreshing keeps the same name and seat.
-export function ensureJoined(room: Room, id: string, now: number) {
-  if (!room.members[id]) join(room, id, freshName(room), now);
+// A saved name is only applied when this browser is not already at court.
+export function ensureJoined(room: Room, id: string, now: number, preferred?: unknown) {
+  if (!room.members[id]) {
+    let name: string | undefined;
+    if (typeof preferred === "string" && preferred.trim()) {
+      try { name = validatedName(room, id, preferred, now); }
+      catch { name = undefined; }
+    }
+    join(room, id, name ?? freshName(room), now);
+  }
   // Existing courts may still have a seated-out advisor from the old rule.
   if (room.advisorId !== id && room.creator.memberId === id && room.members[id].name === room.creator.name) renamePlayer(room, id);
   heartbeat(room, id, now);

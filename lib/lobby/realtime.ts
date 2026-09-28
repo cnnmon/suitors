@@ -1,5 +1,6 @@
 import { ConvexClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
+import { savedName } from "./savedName";
 import { HEARTBEAT_MS } from "./settings";
 import type { RoomView } from "./types";
 
@@ -23,7 +24,8 @@ export function watchCourt(endpoint: string, receive: (state: RoomView) => void,
     inFlight = true;
     try {
       const path = presenceOnly ? `${endpoint}${endpoint.includes("?") ? "&" : "?"}presence=1` : endpoint;
-      const response = await fetch(path, { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(12_000)]) });
+      const name = savedName();
+      const response = await fetch(path, { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(12_000)]), ...(name ? { headers: { "x-suitor-name": name } } : {}) });
       if (!response.ok) {
         const body = await response.json().catch(() => null) as { error?: string } | null;
         throw new Error(body?.error || `The court could not be reached (${response.status}).`);
