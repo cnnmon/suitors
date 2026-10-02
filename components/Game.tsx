@@ -7,7 +7,11 @@ import type { Lineage } from "@/lib/lobby/lineage";
 import { Conversation } from "./Conversation";
 import { LobbySettings } from "./LobbySettings";
 import { Stage } from "./Stage";
-import { NAME_LIMIT, TURN_COUNT, PREFERENCE_EDIT_LIMIT } from "@/lib/lobby/settings";
+import {
+  NAME_LIMIT,
+  TURN_COUNT,
+  PREFERENCE_EDIT_LIMIT,
+} from "@/lib/lobby/settings";
 import { motion } from "framer-motion";
 import React from "react";
 
@@ -172,15 +176,10 @@ function HowToPlay({
         </h2>
         <p className="m-0">
           You're seated at court as a suitor. Answer the princess's questions
-          and use her reactions and scores to uncover her hidden tastes.
-        </p>
-        <p className="m-0">
-          After {TURN_COUNT} turns, the highest-scoring suitor wins her hand and
-          reveals her preferences. You may change up to {PREFERENCE_EDIT_LIMIT}{" "}
-          characters of her tastes, then{" "}
-          {winnerSitsOut
-            ? "watch the next contest."
-            : "rejoin the next reign under a new name."}
+          and use her reactions and scores to uncover her hidden tastes. After{" "}
+          <b>{TURN_COUNT} turns</b>, the highest-scoring suitor wins her hand
+          and her preferences are revealed---but the winning suitor gets to
+          change it a little, secretly!
         </p>
         <div className="flex justify-center items-center flex-col gap-2">
           <button
@@ -467,7 +466,9 @@ export function Game({ lobbyId }: { lobbyId?: string }) {
             </aside>
           ) : undefined}
         </div>*/}
-        <div className="absolute bottom-0 p-4 z-[5]">
+        <div
+          className={`absolute bottom-0 left-0 p-4 z-[5] ${state.revealedPreference ? "w-full max-w-[640px]" : "max-w-full"}`}
+        >
           <Conversation
             key={`${state.turnKey}:${state.phase}:${state.speakerId ?? "court"}:${state.you?.seatId ?? "guest"}`}
             game={game}

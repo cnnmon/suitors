@@ -45,33 +45,9 @@ export function Conversation({ game }: { game: GameController }) {
     : 0;
   const overBudget = creating && edits > PREFERENCE_EDIT_LIMIT;
   const limit = mode === "create" ? PREFERENCE_LIMIT : MESSAGE_LIMIT;
-  const label =
-    mode === "create"
-      ? "Her secret preferences"
-      : "Your answer to the princess";
-  const description = !me
-    ? "Taking your place at court…"
-    : creating
-      ? `You won! Edit up to ${PREFERENCE_EDIT_LIMIT} characters of her preferences. Additions, deletions, and replacements each count as one.`
-      : state.revealedPreference
-        ? `Her secret: “${state.revealedPreference}”`
-        : state.phase === "lobby"
-          ? "The court is waiting. Enter to begin."
-          : me.role === "advisor"
-            ? "You’re watching this contest. You’ll rejoin the next one."
-            : me.role === "spectator"
-              ? "You’ll join as another suitor when a seat opens."
-              : state.thinking && speaker && !speaker.line
-                ? `${speaker.name} is thinking…`
-                : dialogue?.pending || state.thinking
-                  ? "The princess is thinking…"
-                  : dialogue
-                    ? dialogue.reply
-                    : canSpeak
-                      ? remaining === null
-                        ? "(What do you think the princess would like to hear?)"
-                        : `${remaining}s. Then click Next.`
-                      : "Click Next when you're ready for the following suitor.";
+  const revealed = ["reveal", "creating"].includes(state.phase)
+    ? state.revealedPreference
+    : null;
 
   async function send() {
     if (!draft.trim() || !mode || overBudget) return;
@@ -82,7 +58,7 @@ export function Conversation({ game }: { game: GameController }) {
   }
   return (
     <section
-      className="flex shrink-0 flex-col gap-2 border-2 border-ink bg-paper p-3 shadow-[3px_3px_0_#0b4b28"
+      className="flex shrink-0 flex-col gap-2 border-2 border-ink bg-paper p-3 shadow-[3px_3px_0_#0b4b28]"
       aria-label="Conversation"
     >
       {["lobby", "dialogue", "evaluating", "results", "feedback"].includes(
@@ -111,7 +87,22 @@ export function Conversation({ game }: { game: GameController }) {
           Start contest →
         </button>
       )}
-      {creating && <p className="m-0">{description}</p>}
+      {revealed && (
+        <div className="border-l-4 border-ink bg-white/50 px-4 py-3">
+          <h2 className="m-0 text-xs font-bold uppercase tracking-wider">
+            Her secret preferences
+          </h2>
+          <p className="mt-1 mb-0 break-words text-lg leading-snug">
+            “{revealed}”
+          </p>
+        </div>
+      )}
+      {creating && (
+        <p className="m-0 text-sm" id="preference-instructions">
+          Shape the next princess. Change up to {PREFERENCE_EDIT_LIMIT}{" "}
+          characters, or keep her tastes.
+        </p>
+      )}
       {state.phase === "evaluating" && (
         <p className="m-0" role="status">
           The princess is considering everyone’s answers…
@@ -131,7 +122,7 @@ export function Conversation({ game }: { game: GameController }) {
       )}
       {state.phase === "feedback" && dialogue && (
         <p>
-          The princess thought:{" "}
+          What the princess thought about your answer:{" "}
           {dialogue.feedback.toLowerCase().replace("very", "")}{" "}
           <strong className="ml-2">
             +{state.seats.find((s) => s.id === me?.seatId)?.lastScore ?? 0} pts
@@ -140,50 +131,70 @@ export function Conversation({ game }: { game: GameController }) {
       )}
       {mode ? (
         <form
-          className="mt-1 flex items-center gap-2.5 max-md:flex-wrap max-md:gap-1.5 [@media(max-height:550px)]:flex-nowrap"
+          className={
+            creating
+              ? "mt-1 grid gap-2"
+              : "mt-1 flex items-center gap-2.5 max-md:flex-wrap max-md:gap-1.5 [@media(max-height:550px)]:flex-nowrap"
+          }
           onSubmit={(e) => {
             e.preventDefault();
             void send();
           }}
         >
-          <input
-            className="min-w-0 flex-1 border-2 border-ink bg-[#fff7fc] px-3 py-2 text-ink"
-            aria-label={label}
-            aria-describedby={creating ? "preference-budget" : undefined}
-            aria-invalid={overBudget || undefined}
-            placeholder={
-              mode === "create"
-                ? "Likes quiet confidence. Hates flattery."
-                : "Your answer…"
+          {creating ? (
+            <label className="grid gap-1 text-sm font-bold">
+              The next princess’s preferences
+              <textarea
+                className="w-full resize-none border-2 border-ink bg-[#fff7fc] px-3 py-2 text-base font-normal leading-snug text-ink"
+                aria-describedby="preference-instructions preference-budget"
+                aria-invalid={overBudget || undefined}
+                rows={2}
+                value={draft}
+                maxLength={limit}
+                disabled={busy || !connected}
+                onChange={(e) => setDraft(e.target.value)}
+              />
+            </label>
+          ) : (
+            <input
+              className="min-w-0 flex-1 border-2 border-ink bg-[#fff7fc] px-3 py-2 text-ink"
+              aria-label="Your answer to the princess"
+              placeholder="Your answer…"
+              value={draft}
+              maxLength={limit}
+              autoComplete="off"
+              disabled={busy || !connected}
+              onChange={(e) => setDraft(e.target.value)}
+            />
+          )}
+          <div
+            className={
+              creating ? "flex items-center justify-between gap-3" : "contents"
             }
-            value={draft}
-            maxLength={limit}
-            autoComplete="off"
-            disabled={busy || !connected}
-            onChange={(e) => setDraft(e.target.value)}
-          />
-          <span
-            id={creating ? "preference-budget" : undefined}
-            className="shrink-0 text-sm"
-            aria-live="polite"
           >
-            {creating
-              ? `${edits}/${PREFERENCE_EDIT_LIMIT} edits · ${draft.length}/${limit} chars`
-              : `${draft.length}/${limit}`}
-          </span>
-          <button
-            className="border-2 border-ink bg-ink px-4 py-2 whitespace-nowrap text-paper"
-            type="submit"
-            disabled={busy || !draft.trim() || !connected || overBudget}
-          >
-            {busy
-              ? "…"
-              : mode === "create"
-                ? edits === 0
-                  ? "Keep preferences →"
-                  : "Save preferences →"
-                : "Send →"}
-          </button>
+            <span
+              id={creating ? "preference-budget" : undefined}
+              className="shrink-0 text-sm"
+              aria-live="polite"
+            >
+              {creating
+                ? `${edits}/${PREFERENCE_EDIT_LIMIT} character edits`
+                : `${draft.length}/${limit}`}
+            </span>
+            <button
+              className="border-2 border-ink bg-ink px-4 py-2 whitespace-nowrap text-paper"
+              type="submit"
+              disabled={busy || !draft.trim() || !connected || overBudget}
+            >
+              {busy
+                ? "…"
+                : mode === "create"
+                  ? edits === 0
+                    ? "Keep preferences →"
+                    : "Save preferences →"
+                  : "Send →"}
+            </button>
+          </div>
         </form>
       ) : me?.role === "spectator" && !me.entered ? (
         <button
@@ -211,13 +222,13 @@ export function Conversation({ game }: { game: GameController }) {
                 ? "Continue →"
                 : state.phase === "creating"
                   ? "Meet the next princess →"
-                  : "Next →"}
+                  : "Next answer →"}
         </button>
       ) : !["dialogue", "evaluating"].includes(state.phase) ||
         me?.role !== "suitor" ? (
         <p className="opacity-80 text-xs">
           {state.phase === "reveal"
-            ? "Ties: last-turn score, then seat order. Winner edits the next princess’s preferences shortly."
+            ? "The winner shapes the next princess’s tastes."
             : state.phase === "creating"
               ? state.timersEnabled
                 ? `The court continues automatically if no prompt arrives in ${CREATE_MS / 1000}s.`

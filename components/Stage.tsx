@@ -62,7 +62,7 @@ export function Stage({ state, now }: { state: RoomView; now: number }) {
   if (picked) {
     return (
       <section
-        className="grid h-full place-items-center absolute top-30 right-30"
+        className="grid h-full place-items-center absolute top-30 right-60"
         aria-label="The shared court"
       >
         <div className="grid justify-items-center gap-3">
