@@ -72,6 +72,19 @@ export function Conversation({ game }: { game: GameController }) {
           : “{state.prompt}”
         </p>
       )}
+      {state.phase === "results" && speaker && (
+        <div className="grid gap-1 border-l-4 border-ink/30 pl-3" aria-live="polite">
+          <p className="m-0 break-words">
+            <strong>{speaker.name}</strong>{" "}
+            {speaker.line ? <>said: “{speaker.line}”</> : "didn’t answer."}
+          </p>
+          {speaker.mark != null && (
+            <p className="m-0">
+              The princess rated it <strong>{speaker.mark}/10</strong>.
+            </p>
+          )}
+        </div>
+      )}
       {state.phase === "lobby" && state.privateLobby && state.canConfigure && (
         <button
           className="w-fit border-2 border-ink bg-ink px-4 py-2 text-paper"
